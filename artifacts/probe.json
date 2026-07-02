@@ -1,0 +1,13 @@
+{
+  "arm": "pragma_nano_probe",
+  "ckpt": "artifacts/pretrain_nano.pt",
+  "train_events": 9718103,
+  "metrics": {
+    "n": 2277180,
+    "n_pos": 2928,
+    "roc_auc": 0.946156124971502,
+    "pr_auc": 0.24206315477836893,
+    "recall@p0.5": 0.11816939890710383,
+    "recall@p0.9": 0.014685792349726777
+  }
+}

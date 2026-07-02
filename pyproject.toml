@@ -1,0 +1,22 @@
+[project]
+name = "pragma-ffm"
+version = "0.1.0"
+description = "Scaled reproduction of a PRAGMA-style financial foundation model (MLM-pretrained event-sequence transformer)"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.2",
+    "pandas>=2.0",
+    "pyarrow>=14",
+    "numpy",
+    "scikit-learn",
+    "lightgbm",
+    "tqdm",
+    "einops",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

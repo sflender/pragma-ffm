@@ -1,0 +1,15 @@
+# data & artifacts (regenerate via the documented pipeline; too large / binary for git)
+data/
+artifacts/*.pt
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.ipynb_checkpoints/
+
+# os / editor
+.DS_Store

@@ -1,0 +1,12 @@
+{
+  "arm": "lightgbm",
+  "best_iteration": 1,
+  "metrics": {
+    "n": 2277212,
+    "n_pos": 2928,
+    "roc_auc": 0.9401265359689064,
+    "pr_auc": 0.04342699675276258,
+    "recall@p0.5": 0.0,
+    "recall@p0.9": 0.0
+  }
+}
