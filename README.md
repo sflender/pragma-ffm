@@ -113,6 +113,28 @@ Note on absolute PR-AUC: it looks small because it is anchored to the 0.13% base
   codes, MCC, amount): LightGBM reaches ROC-AUC 0.94 with essentially one deep tree.
 - Temporal split is shift-confounded (LightGBM 0.94 → 0.79); we headline the seq split.
 
+### Numeric-encoding A/B (bucket vs PLE vs periodic)
+
+How the `amount` field is embedded, holding everything else fixed (nano, 3000 steps,
+as-of-date probe):
+
+| numeric_mode | ROC-AUC | PR-AUC |
+|--------------|---------|--------|
+| **bucket** (hard quantile) | 0.944 | **0.219** |
+| PLE (piecewise-linear) | 0.942 | 0.110 |
+| periodic (Fourier) | 0.941 | 0.087 |
+
+**Surprise: hard quantile bucketing wins decisively on PR-AUC** — the opposite of the
+general tabular-DL finding (Gorishniy et al. 2022). ROC-AUC is ~identical; the gap is
+entirely in the high-precision region. Leading hypotheses: (1) the MLM target for amount
+is the *bucket id*, so bucket **input** is aligned with the reconstruction objective while
+PLE/periodic are not; (2) the continuous encoders are freshly-initialised modules,
+undertrained at 3000 steps (and saw ~6% guard-skipped steps from early gradient spikes),
+vs the shared embedding table bucket reuses; (3) 64 buckets already capture amount's fraud
+signal, so extra within-bin resolution doesn't help and the added module dilutes. All
+three still beat LightGBM. Caveats: single seed, nano scale, short budget. A fair rematch
+would add a continuous (regression) MLM target for the numeric field and more steps.
+
 **Training stability:** an MPS softmax-backward NaN (from a `finfo.min` attention mask)
 was fixed with a moderate finite mask value (`-1e4`) plus a guard that skips the optimizer
 step on any non-finite gradient. nano trains clean (loss 4.87 → 2.04, 0 skips).
