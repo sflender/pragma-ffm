@@ -11,13 +11,15 @@ import json
 import time
 from pathlib import Path
 
+from dataclasses import fields as dc_fields
+
 import numpy as np
 import torch
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader
 
-from pragma.config import get_preset
+from pragma.config import ModelConfig
 from pragma.data.dataset import WindowDataset
 from pragma.eval.metrics import evaluate, print_report
 from pragma.model.pragma import MiniPragma
@@ -28,11 +30,13 @@ from pragma.utils import get_device
 
 def load_backbone(ckpt_path: str, tok: Tokenizer, device):
     ckpt = torch.load(ckpt_path, map_location=device)
-    preset = get_preset(ckpt["preset"])
-    model = MiniPragma(tok, preset.model).to(device)
+    # rebuild ModelConfig from the saved dict, tolerating fields added/removed since.
+    valid = {f.name for f in dc_fields(ModelConfig)}
+    mcfg = ModelConfig(**{k: v for k, v in ckpt["model_cfg"].items() if k in valid})
+    model = MiniPragma(tok, mcfg).to(device)
     model.load_state_dict(ckpt["model"])
     model.eval()
-    return model, preset
+    return model, ckpt.get("preset", "model"), mcfg
 
 
 @torch.no_grad()
@@ -43,7 +47,8 @@ def extract(model, ds, device, batch_size, max_batches=None, shuffle=False, caus
         if max_batches is not None and i >= max_batches:
             break
         batch = to_device(batch, device)
-        r = model.record_embeddings(batch["codes"], batch["times"], batch["mask"], causal=causal)
+        r = model.record_embeddings(batch["codes"], batch["times"], batch["mask"],
+                                    batch.get("amount"), causal=causal)
         m = batch["mask"]
         embs.append(r[m].float().cpu().numpy())
         labs.append(batch["fraud"][m].cpu().numpy())
@@ -55,8 +60,9 @@ def run(ckpt_path, data_dir, tok_path, out_json, train_batches, batch_size,
     t0 = time.time()
     device = get_device(device_str)
     tok = Tokenizer.load(tok_path)
-    model, preset = load_backbone(ckpt_path, tok, device)
-    L = preset.model.max_seq_len
+    model, preset_name, mcfg = load_backbone(ckpt_path, tok, device)
+    L = mcfg.max_seq_len
+    arm_id = f"{preset_name}_{mcfg.numeric_mode}"
 
     tr_ds = WindowDataset(data_dir, "train", L)
     te_ds = WindowDataset(data_dir, "test", L)
@@ -66,7 +72,7 @@ def run(ckpt_path, data_dir, tok_path, out_json, train_batches, batch_size,
     Xte, yte = extract(model, te_ds, device, batch_size, max_batches=None,
                        shuffle=False, causal=causal)
     mode = "causal/as-of-date" if causal else "bidirectional"
-    print(f"[probe] mode={mode} train events={len(ytr):,} (fraud={int(ytr.sum()):,}) "
+    print(f"[probe] {arm_id} mode={mode} train events={len(ytr):,} (fraud={int(ytr.sum()):,}) "
           f"test events={len(yte):,} (fraud={int(yte.sum()):,})  extract {time.time()-t0:.1f}s")
 
     scaler = StandardScaler().fit(Xtr)
@@ -76,10 +82,11 @@ def run(ckpt_path, data_dir, tok_path, out_json, train_batches, batch_size,
 
     m = evaluate(yte, scores)
     tag = "asof" if causal else "probe"
-    print_report(f"PRAGMA-{preset.name} {'as-of-date' if causal else 'linear'} probe / test", m)
+    print_report(f"PRAGMA {arm_id} {'as-of-date' if causal else 'linear'} probe / test", m)
 
-    result = {"arm": f"pragma_{preset.name}_{tag}", "ckpt": ckpt_path,
-              "causal": causal, "train_events": int(len(ytr)), "metrics": m}
+    result = {"arm": f"pragma_{arm_id}_{tag}", "ckpt": ckpt_path,
+              "causal": causal, "numeric_mode": mcfg.numeric_mode,
+              "train_events": int(len(ytr)), "metrics": m}
     Path(out_json).parent.mkdir(parents=True, exist_ok=True)
     Path(out_json).write_text(json.dumps(result, indent=2))
     print(f"[probe] wrote {out_json}  (total {time.time()-t0:.1f}s)")
@@ -88,10 +95,11 @@ def run(ckpt_path, data_dir, tok_path, out_json, train_batches, batch_size,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ckpt", default="artifacts/pretrain_nano.pt")
+    ap.add_argument("--ckpt", default="artifacts/pretrain_nano_bucket.pt")
     ap.add_argument("--data-dir", default="data/processed")
     ap.add_argument("--tokenizer", default="artifacts/tokenizer.json")
-    ap.add_argument("--out", default="artifacts/probe.json")
+    ap.add_argument("--out", default=None,
+                    help="output json; default derived from ckpt name + probe mode")
     ap.add_argument("--train-batches", type=int, default=400,
                     help="number of train windows batches to embed for fitting the probe")
     ap.add_argument("--batch-size", type=int, default=256)
@@ -99,8 +107,11 @@ def main():
     ap.add_argument("--causal", action="store_true",
                     help="as-of-date: each event's embedding uses only past+self (no future)")
     args = ap.parse_args()
-    out = args.out if not args.causal else args.out.replace("probe.json", "probe_asof.json")
-    run(args.ckpt, args.data_dir, args.tokenizer, out,
+    if args.out is None:
+        stem = Path(args.ckpt).stem.replace("pretrain_", "")   # e.g. nano_ple
+        suffix = "asof" if args.causal else "probe"
+        args.out = f"artifacts/eval_{stem}_{suffix}.json"
+    run(args.ckpt, args.data_dir, args.tokenizer, args.out,
         args.train_batches, args.batch_size, args.device, args.causal)
 
 

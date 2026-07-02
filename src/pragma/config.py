@@ -38,6 +38,10 @@ class ModelConfig:
     n_history_layers: int = 4           # History Encoder depth (over events in a sequence)
     dropout: float = 0.1
 
+    # --- numeric feature encoding ---
+    numeric_mode: str = "bucket"        # bucket | ple | periodic
+    periodic_n_freq: int = 16           # #frequencies for the periodic embedding
+
     # --- rope ---
     rope_theta: float = 10000.0
     # time is measured in *days* since sequence start; scaled before RoPE.

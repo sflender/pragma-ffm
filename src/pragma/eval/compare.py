@@ -16,7 +16,7 @@ def main():
     ad = Path(args.artifacts)
     files = args.files or sorted(
         [str(p) for p in ad.glob("*.json")
-         if any(k in p.name for k in ("lgbm", "probe"))])
+         if any(k in p.name for k in ("lgbm", "probe", "asof", "eval"))])
     rows = []
     for f in files:
         try:

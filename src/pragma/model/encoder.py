@@ -8,33 +8,104 @@
 """
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pragma.model.tokenizer import Tokenizer
+from pragma.model.tokenizer import MASK, Tokenizer
+
+
+# ---------------------------------------------------------- numeric encoders
+class PLEEmbedder(nn.Module):
+    """Piecewise-Linear Encoding (Gorishniy et al. 2022).
+
+    A value x maps to a T-dim ramp vector: bins fully below x -> 1, the active bin ->
+    the fractional position within it, bins above -> 0 (e.g. [1,1,1,0.42,0,0,0,0]), then
+    a linear map to d_model. Reuses the tokenizer's quantile bin edges, so it is scale-
+    robust and, unlike hard bucketing, preserves within-bin magnitude & ordering.
+    """
+
+    def __init__(self, edges, d_model):
+        super().__init__()
+        e = torch.tensor(edges, dtype=torch.float32)
+        self.register_buffer("lo", e[:-1], persistent=False)
+        self.register_buffer("hi", e[1:], persistent=False)
+        self.T = len(edges) - 1
+        self.lin = nn.Linear(self.T, d_model)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:      # x (B,L) -> (B,L,d)
+        denom = (self.hi - self.lo).clamp(min=1e-6)
+        e = ((x[..., None] - self.lo) / denom).clamp(0.0, 1.0)
+        return self.lin(e)
+
+
+class PeriodicEmbedder(nn.Module):
+    """Periodic (Fourier-feature) encoding: x -> [sin(2*pi*c*x), cos(2*pi*c*x)] with
+    learned frequencies c, then a linear map. Amount is signed-log normalised first to
+    tame the heavy tail before the sinusoids.
+    """
+
+    def __init__(self, d_model, n_freq: int = 16, sigma: float = 1.0):
+        super().__init__()
+        self.coef = nn.Parameter(torch.randn(n_freq) * sigma)
+        self.lin = nn.Linear(2 * n_freq, d_model)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:      # x (B,L) -> (B,L,d)
+        xn = torch.sign(x) * torch.log1p(x.abs()) / 10.0     # ~[-1,1] for typical amounts
+        v = 2 * math.pi * xn[..., None] * self.coef          # (B,L,n_freq)
+        e = torch.cat([torch.sin(v), torch.cos(v)], dim=-1)  # (B,L,2*n_freq)
+        return self.lin(e)
 
 
 # ------------------------------------------------------------------ embeddings
 class FieldValueEmbedder(nn.Module):
     """Local value ids (B,L,F) -> token embeddings (B,L,F,d).
 
-    Token = shared value embedding (global id = per-field offset + local id) + field embedding.
+    Token = shared value embedding (global id = per-field offset + local id) + field
+    embedding. For numeric fields, ``numeric_mode`` in {ple, periodic} replaces the
+    bucket-lookup embedding with a continuous encoding of the raw value; masked numeric
+    cells (code == MASK) use a learned mask vector so no value leaks.
     """
 
-    def __init__(self, tok: Tokenizer, d_model: int):
+    def __init__(self, tok: Tokenizer, d_model: int, numeric_mode: str = "bucket",
+                 periodic_n_freq: int = 16):
         super().__init__()
         self.F = tok.F
+        self.numeric_mode = numeric_mode
         offsets = torch.tensor([f.offset for f in tok.fields], dtype=torch.long)
         self.register_buffer("offsets", offsets, persistent=False)
         self.value_emb = nn.Embedding(tok.V, d_model)
         self.field_emb = nn.Embedding(tok.F, d_model)
 
-    def forward(self, codes: torch.Tensor) -> torch.Tensor:  # (B,L,F) long
-        gids = codes + self.offsets                          # broadcast over F
+        self.num_idx = [i for i, f in enumerate(tok.fields) if f.kind == "num"]
+        if numeric_mode != "bucket" and self.num_idx:
+            self.num_embedders = nn.ModuleDict()
+            self.num_mask = nn.ParameterDict()
+            for i in self.num_idx:
+                f = tok.fields[i]
+                if numeric_mode == "ple":
+                    self.num_embedders[str(i)] = PLEEmbedder(f.edges, d_model)
+                elif numeric_mode == "periodic":
+                    self.num_embedders[str(i)] = PeriodicEmbedder(d_model, periodic_n_freq)
+                else:
+                    raise ValueError(f"unknown numeric_mode {numeric_mode!r}")
+                p = nn.Parameter(torch.zeros(d_model)); nn.init.normal_(p, std=0.02)
+                self.num_mask[str(i)] = p
+
+    def forward(self, codes: torch.Tensor, numeric: torch.Tensor | None = None) -> torch.Tensor:
+        gids = codes + self.offsets                          # (B,L,F)
         tok = self.value_emb(gids)                           # (B,L,F,d)
+        if self.numeric_mode != "bucket" and self.num_idx:
+            assert numeric is not None, "numeric values required for ple/periodic mode"
+            tok = tok.clone()
+            for i in self.num_idx:                           # single numeric field (amount)
+                emb = self.num_embedders[str(i)](numeric)    # (B,L,d)
+                masked = (codes[:, :, i] == MASK)[..., None]
+                tok[:, :, i, :] = torch.where(masked, self.num_mask[str(i)], emb)
         fidx = torch.arange(self.F, device=codes.device)
-        return tok + self.field_emb(fidx)                    # + (F,d)
+        return tok + self.field_emb(fidx)
 
 
 # --------------------------------------------------------------- event encoder

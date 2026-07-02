@@ -21,7 +21,7 @@ class MiniPragma(nn.Module):
         self.tok = tok
         self.cfg = cfg
         d = cfg.d_model
-        self.embedder = FieldValueEmbedder(tok, d)
+        self.embedder = FieldValueEmbedder(tok, d, cfg.numeric_mode, cfg.periodic_n_freq)
         self.event = EventEncoder(d, cfg.n_heads, cfg.d_ff, cfg.n_event_layers, cfg.dropout)
         self.history = HistoryEncoder(
             d, cfg.n_heads, cfg.d_ff, cfg.n_history_layers, cfg.dropout, cfg.rope_theta)
@@ -38,17 +38,17 @@ class MiniPragma(nn.Module):
         elif isinstance(m, nn.Embedding):
             nn.init.trunc_normal_(m.weight, std=0.02)
 
-    def encode(self, codes, times, mask, causal=False):
+    def encode(self, codes, times, mask, amount=None, causal=False):
         """Return (record_emb (B,L,d), field_out (B,L,F,d))."""
-        tokens = self.embedder(codes)
+        tokens = self.embedder(codes, amount)
         evt, field_out = self.event(tokens)
         r = self.history(evt, times, mask, causal)
         return r, field_out
 
-    def record_embeddings(self, codes, times, mask, causal=False):
-        return self.encode(codes, times, mask, causal)[0]
+    def record_embeddings(self, codes, times, mask, amount=None, causal=False):
+        return self.encode(codes, times, mask, amount, causal)[0]
 
-    def mlm_logits(self, codes, times, mask):
-        r, field_out = self.encode(codes, times, mask)
+    def mlm_logits(self, codes, times, mask, amount=None):
+        r, field_out = self.encode(codes, times, mask, amount)
         fused = self.mlm_norm(field_out + r.unsqueeze(2))   # (B,L,F,d)
         return [head(fused[:, :, j, :]) for j, head in enumerate(self.mlm_heads)]

@@ -39,7 +39,7 @@ def mlm_step(model: MiniPragma, batch: dict, tcfg):
     codes, times, mask = batch["codes"], batch["times"], batch["mask"]
     masked, targets = apply_mlm_mask(
         codes, mask, tcfg.mask_token_prob, tcfg.mask_event_prob, tcfg.mask_field_prob)
-    logits = model.mlm_logits(masked, times, mask)
+    logits = model.mlm_logits(masked, times, mask, batch.get("amount"))
     loss, ntok = mlm_loss(logits, targets)
     n_real = int(mask.sum().item()) * model.tok.F
     return loss, ntok, n_real
@@ -58,11 +58,14 @@ def cosine_warmup(step: int, warmup: int, total: int) -> float:
 
 
 def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
-          device_str: str = "auto", max_steps: int | None = None) -> Path:
+          device_str: str = "auto", max_steps: int | None = None,
+          numeric_mode: str | None = None) -> Path:
     preset = get_preset(preset_name)
     tcfg = preset.train
     if max_steps is not None:
         tcfg.max_steps = max_steps
+    if numeric_mode is not None:
+        preset.model.numeric_mode = numeric_mode
     seed_everything(tcfg.seed)
     device = get_device(device_str)
 
@@ -71,7 +74,8 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
     loader = DataLoader(ds, batch_size=tcfg.batch_size, shuffle=True, drop_last=True,
                         num_workers=0)
     model = build_model(tok, preset, device)
-    print(f"[pretrain] preset={preset_name} params={count_params(model):,} device={device} "
+    print(f"[pretrain] preset={preset_name} numeric_mode={preset.model.numeric_mode} "
+          f"params={count_params(model):,} device={device} "
           f"windows={len(ds):,} steps={tcfg.max_steps}")
 
     opt = torch.optim.AdamW(model.parameters(), lr=tcfg.lr, weight_decay=tcfg.weight_decay)
@@ -81,7 +85,7 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
     model.train()
     step, t0, running, skipped = 0, time.time(), 0.0, 0
     out = Path(out_dir); out.mkdir(parents=True, exist_ok=True)
-    ckpt_path = out / f"pretrain_{preset_name}.pt"
+    ckpt_path = out / f"pretrain_{preset_name}_{preset.model.numeric_mode}.pt"
 
     while step < tcfg.max_steps:
         for batch in loader:
@@ -122,8 +126,10 @@ def main() -> None:
     ap.add_argument("--out-dir", default="artifacts")
     ap.add_argument("--device", default="auto")
     ap.add_argument("--max-steps", type=int, default=None)
+    ap.add_argument("--numeric-mode", choices=["bucket", "ple", "periodic"], default=None)
     args = ap.parse_args()
-    train(args.preset, args.data_dir, args.tokenizer, args.out_dir, args.device, args.max_steps)
+    train(args.preset, args.data_dir, args.tokenizer, args.out_dir, args.device,
+          args.max_steps, args.numeric_mode)
 
 
 if __name__ == "__main__":
