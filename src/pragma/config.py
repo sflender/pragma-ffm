@@ -13,10 +13,21 @@ from typing import Optional
 
 
 @dataclass
+class TokenizerConfig:
+    """Data-encoding hyperparameters. Shared across all model presets (they all read the
+    same pre-encoded arrays), so these live here rather than in ModelConfig. This is the
+    single source of truth for encode.py; the fitted values are persisted in tokenizer.json.
+    """
+    n_amount_buckets: int = 64          # percentile buckets for the numerical Amount field
+    hash_buckets: int = 4096            # hash space for high-cardinality categoricals
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
 class ModelConfig:
-    # --- tokenizer / feature space ---
-    n_amount_buckets: int = 64          # percentile buckets for numerical Amount
-    hash_buckets_high_card: int = 4096  # hash space for high-cardinality categoricals
+    # --- sequence window ---
     max_seq_len: int = 128              # max events (transactions) per history window
 
     # --- dimensions ---
