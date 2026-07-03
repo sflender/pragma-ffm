@@ -1,0 +1,15 @@
+{
+  "arm": "pragma_nano_bucket_dt_L256_asof",
+  "ckpt": "artifacts/pretrain_nano_bucket_dt_L256.pt",
+  "causal": true,
+  "numeric_mode": "bucket",
+  "train_events": 19794237,
+  "metrics": {
+    "n": 2277199,
+    "n_pos": 2928,
+    "roc_auc": 0.9475823331173102,
+    "pr_auc": 0.23512647787350646,
+    "recall@p0.5": 0.164275956284153,
+    "recall@p0.9": 0.005806010928961749
+  }
+}

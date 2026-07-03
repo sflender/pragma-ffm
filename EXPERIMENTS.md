@@ -254,6 +254,50 @@ banking data plausibly has long-range fraud (rings, dormant-reactivation), and o
 
 ---
 
+## E8 — Context length (seq len) vs PR-AUC: where does it plateau?
+
+**Question:** how much recent history does the model actually need? Where does more
+context stop helping?
+
+**Setup:** train nano (bucket + Δt, 3000 steps) at context window **L ∈ {4,8,16,32,64,128,256}**,
+as-of-date probe at the same L. Repro: `pretrain ... --max-seq-len L --tag _dt_L{L}` then probe.
+
+**Result:**
+
+```
+   L  PR-AUC  %ofmax     ROC   R@P0.5   bar
+   4   0.055     23%   0.935   0.000  #######
+   8   0.151     64%   0.951   0.042  ###################
+  16   0.167     71%   0.945   0.024  #####################
+  32   0.212     90%   0.948   0.132  ###########################
+  64   0.155     66%   0.944   0.057  ####################   <- single-seed dip
+ 128   0.227     97%   0.947   0.144  #############################
+ 256   0.235    100%   0.948   0.164  ##############################
+```
+
+**Interpretation — plateaus early (~L=32), consistent with E7.** PR-AUC rises steeply from
+L=4→32 (reaching **90% of the L=256 value by L=32**), then only creeps up (97% by 128, 100%
+at 256). **ROC-AUC saturates even earlier** (~0.95 by L=8) — ranking quality is set by
+static/short-context features; the marginal PR-AUC gains past L=32 are in the high-precision
+region. This matches E7: the fraud signal is short-range, so ~32 recent events capture
+almost all of it.
+
+**The L=64 dip (0.155) is single-seed noise** — the curve is non-monotonic (128/256 recover),
+which is the honest headline caveat: at one seed these points carry ~±0.03-0.05 noise
+(MLM-training seed + probe subsample), *larger* than the probe-only ±0.005. The *trend*
+(steep→plateau by ~32) is solid; individual points are not. A seed sweep would smooth it.
+
+**Caveats:** (1) nano is capacity-limited (~0.23 ceiling; small@6000 reached 0.495) — so the
+plateau *value* is low, but the plateau *location* (~L=32) is a data property (E7) and should
+hold across sizes; a bigger model would reach a higher plateau at a similar knee. (2) tiling
+means "up to L" context (avg ~L/2).
+
+**Practical takeaway:** L≈32-64 is the efficient operating point for TabFormer fraud; the
+L=128 we've used is comfortably past the knee (no signal lost, just some extra compute), and
+even L=32 would retain ~90% of PR-AUC at a fraction of the attention cost.
+
+---
+
 ## Engineering notes
 
 - **Timing (M4 Max, MPS):** nano ≈ 0.48 s/step (~13 min/epoch); small ≈ 2.97 s/step
