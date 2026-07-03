@@ -20,6 +20,10 @@ class TokenizerConfig:
     """
     n_amount_buckets: int = 64          # percentile buckets for the numerical Amount field
     hash_buckets: int = 4096            # hash space for high-cardinality categoricals
+    include_dt: bool = False            # add a log-bucketed time-since-last-event field
+    n_dt_buckets: int = 20              # #log-spaced buckets for dt
+    dt_min_s: float = 1.0               # smallest dt boundary (seconds)
+    dt_max_s: float = 31_536_000.0      # largest dt boundary (~1 year, seconds)
 
     def to_dict(self) -> dict:
         return asdict(self)

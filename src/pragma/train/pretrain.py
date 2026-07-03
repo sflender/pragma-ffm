@@ -59,7 +59,7 @@ def cosine_warmup(step: int, warmup: int, total: int) -> float:
 
 def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
           device_str: str = "auto", max_steps: int | None = None,
-          numeric_mode: str | None = None) -> Path:
+          numeric_mode: str | None = None, tag: str = "") -> Path:
     preset = get_preset(preset_name)
     tcfg = preset.train
     if max_steps is not None:
@@ -85,7 +85,7 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
     model.train()
     step, t0, running, skipped = 0, time.time(), 0.0, 0
     out = Path(out_dir); out.mkdir(parents=True, exist_ok=True)
-    ckpt_path = out / f"pretrain_{preset_name}_{preset.model.numeric_mode}.pt"
+    ckpt_path = out / f"pretrain_{preset_name}_{preset.model.numeric_mode}{tag}.pt"
 
     while step < tcfg.max_steps:
         for batch in loader:
@@ -127,9 +127,10 @@ def main() -> None:
     ap.add_argument("--device", default="auto")
     ap.add_argument("--max-steps", type=int, default=None)
     ap.add_argument("--numeric-mode", choices=["bucket", "ple", "periodic"], default=None)
+    ap.add_argument("--tag", default="", help="suffix appended to the checkpoint filename")
     args = ap.parse_args()
     train(args.preset, args.data_dir, args.tokenizer, args.out_dir, args.device,
-          args.max_steps, args.numeric_mode)
+          args.max_steps, args.numeric_mode, args.tag)
 
 
 if __name__ == "__main__":

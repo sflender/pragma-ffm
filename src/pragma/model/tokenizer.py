@@ -69,16 +69,23 @@ class Tokenizer:
 
     # ---------------------------------------------------------------- fit
     @classmethod
-    def fit(cls, df_train: pd.DataFrame, n_amount_buckets: int, hash_buckets: int) -> "Tokenizer":
+    def fit(cls, df_train: pd.DataFrame, n_amount_buckets: int, hash_buckets: int,
+            include_dt: bool = False, n_dt_buckets: int = 20,
+            dt_min_s: float = 1.0, dt_max_s: float = 31_536_000.0) -> "Tokenizer":
+        specs = list(FIELD_SPECS) + ([("dt", "dtlog")] if include_dt else [])
         fields: list[FieldSpec] = []
         offset = 0
-        for name, kind in FIELD_SPECS:
+        for name, kind in specs:
             if kind == "num":
                 q = np.linspace(0, 1, n_amount_buckets + 1)
                 edges = np.unique(np.quantile(df_train[name].to_numpy(), q)).tolist()
                 # local vocab = specials + (len(edges)-1) buckets
                 vocab = N_SPECIAL + max(1, len(edges) - 1)
                 fields.append(FieldSpec(name, kind, vocab, offset, edges=edges))
+            elif kind == "dtlog":
+                # log-spaced seconds boundaries -> fine resolution for short gaps (bursts)
+                edges = np.geomspace(dt_min_s, dt_max_s, num=n_dt_buckets - 1).tolist()
+                fields.append(FieldSpec(name, kind, N_SPECIAL + n_dt_buckets, offset, edges=edges))
             elif kind == "cat":
                 vals = df_train[name].astype(str).unique().tolist()
                 cat_map = {v: i + N_SPECIAL for i, v in enumerate(sorted(vals))}
@@ -98,13 +105,18 @@ class Tokenizer:
         n = len(df)
         out = np.zeros((n, self.F), dtype=np.int32)
         # calendar fields need the timestamp
-        dt = pd.to_datetime(df["ts"].to_numpy(), unit="s")
-        hour = np.asarray(dt.hour)
-        dow = np.asarray(dt.dayofweek)
+        ts_dt = pd.to_datetime(df["ts"].to_numpy(), unit="s")
+        hour = np.asarray(ts_dt.hour)
+        dow = np.asarray(ts_dt.dayofweek)
         for j, f in enumerate(self.fields):
             if f.kind == "num":
                 edges = np.asarray(f.edges)
                 b = np.searchsorted(edges, df[f.name].to_numpy(), side="right") - 1
+                b = np.clip(b, 0, f.vocab - N_SPECIAL - 1)
+                out[:, j] = b + N_SPECIAL
+            elif f.kind == "dtlog":
+                edges = np.asarray(f.edges)
+                b = np.searchsorted(edges, df["dt"].to_numpy(), side="right")
                 b = np.clip(b, 0, f.vocab - N_SPECIAL - 1)
                 out[:, j] = b + N_SPECIAL
             elif f.kind == "cat":
