@@ -107,7 +107,20 @@ def small() -> Preset:
     )
 
 
-PRESETS = {"nano": nano, "small": small}
+def mini() -> Preset:
+    """Mid-point between nano and small for scaling studies (~6-7M params)."""
+    return Preset(
+        name="mini",
+        model=ModelConfig(
+            d_model=176, n_heads=4, d_ff=704,
+            n_event_layers=3, n_history_layers=5,
+            max_seq_len=128,
+        ),
+        train=TrainConfig(batch_size=128, max_steps=20000),
+    )
+
+
+PRESETS = {"nano": nano, "mini": mini, "small": small}
 
 
 def get_preset(name: str) -> Preset:
