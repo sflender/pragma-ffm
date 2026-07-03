@@ -83,6 +83,9 @@ nano ≈ 0.48 s/step (~13 min/epoch), small ≈ 2.97 s/step (~60 min/epoch).
 
 ## Findings
 
+See **[EXPERIMENTS.md](EXPERIMENTS.md)** for the full lab notebook (hypotheses, per-experiment
+setups, caveats, and repro commands). Summary below.
+
 **Headline (per-sequence split, test set = 2.28M transactions, 2,928 frauds):**
 
 | arm | ROC-AUC | PR-AUC | Recall@Prec0.5 |
