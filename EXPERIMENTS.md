@@ -25,8 +25,9 @@ bottom. Summary tables in the README point here for the full reasoning.
 | LightGBM (causal features) | 0.940 | 0.043 | 0.000 | 0.000 |
 | PRAGMA nano, bucket | 0.944 | 0.219 | 0.091 | 0.012 |
 | PRAGMA nano, bucket + Δt | 0.953 | 0.236 | 0.163 | 0.010 |
-| PRAGMA mini, bucket + Δt (7.5M) | 0.959 | **0.364** | **0.358** | 0.086 |
-| PRAGMA small, bucket + Δt (13.7M) | **0.963** | 0.349 | 0.310 | **0.102** |
+| PRAGMA mini, bucket + Δt (7.5M) | 0.959 | 0.364 | 0.358 | 0.086 |
+| PRAGMA small, bucket + Δt (13.7M, 3k steps) | 0.963 | 0.349 | 0.310 | 0.102 |
+| **PRAGMA small, bucket + Δt (13.7M, 6k steps)** | **0.977** | **0.495** | **0.523** | **0.193** |
 | PRAGMA nano, PLE | 0.942 | 0.110 | 0.019 | 0.000 |
 | PRAGMA nano, periodic | 0.941 | 0.087 | 0.029 | 0.006 |
 
@@ -184,6 +185,38 @@ monotonically map to better linear-probe downstream when undertrained).
 the sweet spot**; `small` is probably step-starved, not capacity-capped. **Follow-up:**
 compute-matched rerun (give `small` proportionally more steps) to find its true ceiling.
 Caveats: single seed; `nano` uses L=96 vs L=128 for mini/small (minor confound).
+
+---
+
+## E6 — small, compute-matched (6000 steps): was it undertrained?
+
+**Question:** E5's `small` dip — real ceiling or fixed-budget undertraining?
+
+**Setup:** retrain `small` from scratch at **6000 steps** (2× E5's budget), cosine over the
+full horizon; bucket + Δt; as-of-date probe. Repro:
+`python -m pragma.train.pretrain --preset small --numeric-mode bucket --max-steps 6000 --data-dir data/processed_dt --tokenizer artifacts/tokenizer_dt.json --tag _dt_6k`
+
+**Result:**
+
+| model | ROC-AUC | PR-AUC | R@P0.5 | R@P0.9 | MLM loss |
+|-------|---------|--------|--------|--------|----------|
+| mini @3000 | 0.959 | 0.364 | 0.358 | 0.086 | 1.69 |
+| small @3000 | 0.963 | 0.349 | 0.310 | 0.102 | 1.57 |
+| **small @6000** | **0.977** | **0.495** | **0.523** | **0.193** | **1.39** |
+
+**Interpretation — it was undertrained, decisively.** Doubling the budget lifts small's
+PR-AUC **0.349 → 0.495 (+42%)**, well past mini, and Recall@P0.5 to **0.523** (catches >½
+of all fraud at 50% precision). This resolves E5: the `small` dip was purely a fixed-step
+artifact, not a capacity ceiling. Clean story now: **more parameters + enough training both
+help**, and bigger models need proportionally more steps to convert capacity into
+downstream signal (small's MLM loss kept falling to 1.39).
+
+**Consequence for the scaling claim:** a step-matched sweep *understates* larger models.
+The honest scaling law here needs each size trained to (near-)convergence; at 6000 steps
+small is the clear best and likely not yet saturated. **Follow-ups:** push small further
+(8-10k steps) to find the knee; bump mini to 6000 for an apples-to-apples mid-point.
+
+Caveats: single seed.
 
 ---
 
