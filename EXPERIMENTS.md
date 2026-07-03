@@ -159,9 +159,20 @@ attention bias* whereas Δt is per-event *content* usable from layer 1 and by th
 
 ## Open questions / next experiments
 
-- [ ] Seed sweep (≥3 seeds) to put error bars on E3/E4 deltas.
+- [ ] **SIM-style retrieval instead of hard truncation.** Current limitation: history is
+  hard-truncated to the most-recent `L` events (as-of-date window), but sequences are huge
+  (mean 3972, max 70,008 events/card) — so for heavy users we score on the last ~2% of
+  history and drop the rest. Recency truncation can't see long-range patterns (repeat fraud
+  at the same merchant years apart, dormant-then-active cards). Fix = SIM (Alibaba,
+  Pi et al. 2020): a **General Search Unit** retrieves the top-k *relevant* past events from
+  the full lifelong history given the current transaction (hard search = same MCC/merchant/
+  city; or soft search = embedding ANN), then the transformer attends over those instead of
+  "last L." Preserves as-of-date causality (search only events before the target); composes
+  with Δt. This is the priority next architectural step.
+- [ ] Seed sweep (≥3 seeds) to put error bars on E3/E4/scaling deltas.
+- [ ] Scaling: if `small` looks flat, rerun compute-matched (more steps for bigger models)
+  — the current sweep is fixed at 3000 steps, so a flat point may be undertraining.
 - [ ] E3 fair rematch: continuous/regression MLM target for the numeric field.
-- [ ] Scale to `small` (~13.7M) with Δt as default; nano→small scaling curve.
 - [ ] LoRA fine-tuning as a second PRAGMA readout (paper reports this too).
 - [ ] From-scratch task-specific transformer (the paper's literal "domain-specific" contender).
 - [ ] Temporal-split variant (harder, shift-confounded) for contrast.
