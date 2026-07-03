@@ -59,13 +59,16 @@ def cosine_warmup(step: int, warmup: int, total: int) -> float:
 
 def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
           device_str: str = "auto", max_steps: int | None = None,
-          numeric_mode: str | None = None, tag: str = "") -> Path:
+          numeric_mode: str | None = None, tag: str = "",
+          max_seq_len: int | None = None) -> Path:
     preset = get_preset(preset_name)
     tcfg = preset.train
     if max_steps is not None:
         tcfg.max_steps = max_steps
     if numeric_mode is not None:
         preset.model.numeric_mode = numeric_mode
+    if max_seq_len is not None:
+        preset.model.max_seq_len = max_seq_len
     seed_everything(tcfg.seed)
     device = get_device(device_str)
 
@@ -128,9 +131,10 @@ def main() -> None:
     ap.add_argument("--max-steps", type=int, default=None)
     ap.add_argument("--numeric-mode", choices=["bucket", "ple", "periodic"], default=None)
     ap.add_argument("--tag", default="", help="suffix appended to the checkpoint filename")
+    ap.add_argument("--max-seq-len", type=int, default=None, help="override context window L")
     args = ap.parse_args()
     train(args.preset, args.data_dir, args.tokenizer, args.out_dir, args.device,
-          args.max_steps, args.numeric_mode, args.tag)
+          args.max_steps, args.numeric_mode, args.tag, args.max_seq_len)
 
 
 if __name__ == "__main__":
