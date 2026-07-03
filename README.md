@@ -135,6 +135,23 @@ signal, so extra within-bin resolution doesn't help and the added module dilutes
 three still beat LightGBM. Caveats: single seed, nano scale, short budget. A fair rematch
 would add a continuous (regression) MLM target for the numeric field and more steps.
 
+### Δt (time-since-last-event) embedding
+
+Adding a log-bucketed time-since-previous-event field (`--include-dt`; 20 log-spaced
+second buckets), on top of the existing RoPE time encoding and hour/day-of-week features
+(bucket mode, nano, 3000 steps, as-of-date probe):
+
+| model | ROC-AUC | PR-AUC | Recall@Prec0.5 |
+|-------|---------|--------|----------------|
+| bucket (no Δt) | 0.944 | 0.219 | 0.091 |
+| **bucket + Δt** | **0.953** | **0.236** | **0.163** |
+
+**Δt helps** — PR-AUC +7.8%, ROC-AUC +0.009, and Recall@Precision-0.5 **+79%** (0.091 →
+0.163): at a 50%-precision operating point the model catches ~79% more fraud. The gain
+concentrates at high precision, consistent with Δt exposing fraud **bursts** (short gaps)
+as directly-usable content — a signal RoPE only encodes implicitly as a pairwise attention
+bias. Single-seed caveat applies, but the improvement is consistent across all metrics.
+
 **Training stability:** an MPS softmax-backward NaN (from a `finfo.min` attention mask)
 was fixed with a moderate finite mask value (`-1e4`) plus a guard that skips the optimizer
 step on any non-finite gradient. nano trains clean (loss 4.87 → 2.04, 0 skips).

@@ -82,9 +82,10 @@ def run(ckpt_path, data_dir, tok_path, out_json, train_batches, batch_size,
 
     m = evaluate(yte, scores)
     tag = "asof" if causal else "probe"
-    print_report(f"PRAGMA {arm_id} {'as-of-date' if causal else 'linear'} probe / test", m)
+    stem = Path(ckpt_path).stem.replace("pretrain_", "")   # e.g. nano_bucket_dt
+    print_report(f"PRAGMA {stem} {'as-of-date' if causal else 'linear'} probe / test", m)
 
-    result = {"arm": f"pragma_{arm_id}_{tag}", "ckpt": ckpt_path,
+    result = {"arm": f"pragma_{stem}_{tag}", "ckpt": ckpt_path,
               "causal": causal, "numeric_mode": mcfg.numeric_mode,
               "train_events": int(len(ytr)), "metrics": m}
     Path(out_json).parent.mkdir(parents=True, exist_ok=True)
