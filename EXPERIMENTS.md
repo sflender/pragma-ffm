@@ -24,7 +24,9 @@ bottom. Summary tables in the README point here for the full reasoning.
 |-----|---------|--------|--------|--------|
 | LightGBM (causal features) | 0.940 | 0.043 | 0.000 | 0.000 |
 | PRAGMA nano, bucket | 0.944 | 0.219 | 0.091 | 0.012 |
-| PRAGMA nano, bucket + Δt | **0.953** | **0.236** | **0.163** | 0.010 |
+| PRAGMA nano, bucket + Δt | 0.953 | 0.236 | 0.163 | 0.010 |
+| PRAGMA mini, bucket + Δt (7.5M) | 0.959 | **0.364** | **0.358** | 0.086 |
+| PRAGMA small, bucket + Δt (13.7M) | **0.963** | 0.349 | 0.310 | **0.102** |
 | PRAGMA nano, PLE | 0.942 | 0.110 | 0.019 | 0.000 |
 | PRAGMA nano, periodic | 0.941 | 0.087 | 0.029 | 0.006 |
 
@@ -145,6 +147,43 @@ attention bias* whereas Δt is per-event *content* usable from layer 1 and by th
 (b) log-spacing puts resolution exactly at short gaps.
 
 **Caveats:** single seed. Consistent positive across all metrics; magnitude needs a seed sweep.
+
+---
+
+## E5 — Model scaling (nano → mini → small)
+
+**Question:** does the FFM keep improving with capacity, or is this task saturated?
+
+**Setup:** three sizes, all bucket + Δt, **fixed 3000 steps**, as-of-date probe.
+Repro: `python -m pragma.train.pretrain --preset {nano,mini,small} --numeric-mode bucket --max-steps 3000 --data-dir data/processed_dt --tokenizer artifacts/tokenizer_dt.json --tag _dt` then probe `--causal`.
+
+**Result:**
+
+| size | params | ROC-AUC | PR-AUC | R@P0.5 | R@P0.9 | final MLM loss |
+|------|--------|---------|--------|--------|--------|----------------|
+| nano | 2.9M | 0.9525 | 0.2358 | 0.163 | 0.010 | 2.05 |
+| mini | 7.5M | 0.9586 | **0.3644** | **0.358** | 0.086 | 1.69 |
+| small | 13.7M | **0.9632** | 0.3489 | 0.310 | **0.102** | **1.57** |
+
+**Interpretation — splits by metric:**
+- **ROC-AUC and pretraining loss scale monotonically** (loss 2.05 → 1.69 → 1.57): as a
+  language model, bigger is strictly better, no saturation.
+- **PR-AUC and Recall@P0.5 peak at `mini` and dip at `small`** (0.364 → 0.349; 0.358 →
+  0.310). Dips exceed probe noise (~±0.005), so it's a real bend.
+- Overturns the earlier "static/saturated task" read: nano→mini is **+55% PR-AUC**, so
+  there's rich *sequential* structure that capacity unlocks (LightGBM-on-aggregates, 0.043,
+  can't see it).
+
+**Most likely cause of the `small` dip = fixed-budget undertraining.** `small` has ~2×
+`mini`'s params but the *same* 3000 steps. It has the **lowest MLM loss** (best pretrained
+model) yet its frozen representation isn't the most linearly-separable for fraud — the
+classic signature of a bigger model that's step-starved (lower pretraining loss doesn't
+monotonically map to better linear-probe downstream when undertrained).
+
+**Takeaway:** scaling helps a lot (nano→mini), but at a fixed 3000-step budget **`mini` is
+the sweet spot**; `small` is probably step-starved, not capacity-capped. **Follow-up:**
+compute-matched rerun (give `small` proportionally more steps) to find its true ceiling.
+Caveats: single seed; `nano` uses L=96 vs L=128 for mini/small (minor confound).
 
 ---
 

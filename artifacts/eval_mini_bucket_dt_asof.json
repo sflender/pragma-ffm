@@ -1,0 +1,15 @@
+{
+  "arm": "pragma_mini_bucket_dt_asof",
+  "ckpt": "artifacts/pretrain_mini_bucket_dt.pt",
+  "causal": true,
+  "numeric_mode": "bucket",
+  "train_events": 12899459,
+  "metrics": {
+    "n": 2277187,
+    "n_pos": 2928,
+    "roc_auc": 0.9585708584558199,
+    "pr_auc": 0.36443437562489517,
+    "recall@p0.5": 0.35792349726775957,
+    "recall@p0.9": 0.08640710382513661
+  }
+}
