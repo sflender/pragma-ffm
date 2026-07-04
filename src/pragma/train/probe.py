@@ -25,7 +25,7 @@ from pragma.eval.metrics import evaluate, print_report
 from pragma.model.pragma import MiniPragma
 from pragma.model.tokenizer import Tokenizer
 from pragma.train.pretrain import to_device
-from pragma.utils import get_device
+from pragma.utils import get_device, seed_everything
 
 
 def load_backbone(ckpt_path: str, tok: Tokenizer, device):
@@ -59,6 +59,7 @@ def run(ckpt_path, data_dir, tok_path, out_json, train_batches, batch_size,
         device_str="auto", causal=False):
     t0 = time.time()
     device = get_device(device_str)
+    seed_everything(0)   # deterministic train-window subsample (probe variance ~±0.02-0.04)
     tok = Tokenizer.load(tok_path)
     model, preset_name, mcfg = load_backbone(ckpt_path, tok, device)
     L = mcfg.max_seq_len

@@ -288,10 +288,14 @@ gain is small and likely comes from richer *behavioural baselines* (spend/mercha
 familiarity as a negative signal) accumulating with more context, not from fraud-label
 recurrence. Worth noting, not contradictory.
 
-**The L=64 dip (0.155) is single-seed noise** — the curve is non-monotonic (128/256 recover),
-so at one seed these points carry ~±0.03-0.05 noise (MLM-training seed + probe subsample),
-*larger* than the probe-only ±0.005. The 32→128→256 rise survives the noise (three points
-trending up); the dip does not negate it. A seed sweep is needed for a clean curve.
+**The L=64 dip (0.155) is measurement noise — quantified.** Re-probing the *same frozen
+L=64 checkpoint* 4× gives {0.155, 0.164, 0.194, 0.165} (true value ~0.17-0.19); re-probing
+L=32 gives 0.180 (was 0.212), L=128 gives 0.228 (stable). The probe fits its logistic head
+on a *random ~400-batch subsample* of train windows (unseeded), which alone swings PR-AUC by
+**±0.02-0.04**. So L=32 (~0.19) and L=64 (~0.17) overlap — there's no real peak-then-valley;
+the L=64 point just drew low. Only the broad trend (rise through 256) survives this noise;
+per-point structure does not. Fix: seed the probe subsample (done) and average over
+probe+training seeds for a clean curve.
 
 **Caveats:** (1) nano is capacity-limited (~0.23 ceiling; small@6000 reached 0.495) — a
 bigger model may keep gaining from context *longer*, so nano likely *understates* the

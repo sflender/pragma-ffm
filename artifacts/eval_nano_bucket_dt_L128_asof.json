@@ -3,13 +3,13 @@
   "ckpt": "artifacts/pretrain_nano_bucket_dt_L128.pt",
   "causal": true,
   "numeric_mode": "bucket",
-  "train_events": 12901377,
+  "train_events": 12903171,
   "metrics": {
     "n": 2277187,
     "n_pos": 2928,
-    "roc_auc": 0.9471327071073846,
-    "pr_auc": 0.2274223942569419,
-    "recall@p0.5": 0.14412568306010928,
+    "roc_auc": 0.9476033849439947,
+    "pr_auc": 0.2274831383311203,
+    "recall@p0.5": 0.14105191256830601,
     "recall@p0.9": 0.006147540983606557
   }
 }
