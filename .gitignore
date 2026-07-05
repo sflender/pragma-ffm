@@ -1,6 +1,9 @@
 # data & artifacts (regenerate via the documented pipeline; too large / binary for git)
 data/
 artifacts/*.pt
+mlruns/
+mlflow.db
+mlartifacts/
 
 # python
 __pycache__/
