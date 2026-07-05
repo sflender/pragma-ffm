@@ -32,8 +32,10 @@ bottom. Summary tables in the README point here for the full reasoning.
 | PRAGMA nano, periodic | 0.941 | 0.087 | 0.029 | 0.006 |
 
 > **Measurement noise:** the probe fits on a random subsample of train windows, so PR-AUC
-> has run-to-run variance of roughly ±0.005 (single seed). Differences below that are noise;
-> the effects recorded below are larger. A seed sweep is a pending TODO.
+> has run-to-run variance of roughly ±0.005 (now seeded/deterministic). **Training-seed
+> variance is far larger: nano@3000 swings ±~0.05 PR-AUC across seeds (E9)** — as big as many
+> single-seed deltas here. Trust effects that clear ±0.05 (E3, E5/E6 scaling); treat smaller
+> single-seed nano deltas (E4) as suggestive. Multi-seed everything for firm claims.
 
 ---
 
@@ -148,6 +150,10 @@ attention bias* whereas Δt is per-event *content* usable from layer 1 and by th
 (b) log-spacing puts resolution exactly at short gaps.
 
 **Caveats:** single seed. Consistent positive across all metrics; magnitude needs a seed sweep.
+**UPDATE (E9):** a 3-seed run of this nano+Δt config gives mean PR-AUC **0.164 ± 0.057** —
+seed 0 (0.236) was a high draw. The +Δt gain (+0.017) is *within* nano seed noise (±0.05), so
+treat E4 as **suggestive, not established**. Needs a proper seed sweep (or a larger, more
+stable model) to confirm.
 
 ---
 
@@ -305,6 +311,42 @@ context benefit and the true knee could be further out. (2) tiling means "up to 
 **Takeaway (corrected):** more context keeps helping through L=256 (diminishing returns,
 strongest at high precision); the plateau is **not yet reached**. To locate it, extend to
 L∈{512,1024} — ideally seed-averaged and on a larger (non-capacity-limited) model.
+
+---
+
+## E9 — RoPE ablation: how much does the positional encoding matter?
+
+**Question:** how much does RoPE contribute, and does keying it on *event time* beat plain
+*ordinal* position — especially now that the Δt field also injects time (E4)?
+
+**Setup:** nano, bucket + Δt, 3000 steps, as-of-date probe. `pos_mode ∈ {time, index, none}`,
+**3 training seeds each**. Repro: `pretrain ... --pos-mode {time,index,none} --seed {0,1,2}`.
+
+**Result (mean ± std over 3 seeds):**
+
+| pos_mode | mean PR-AUC | std | seeds {0,1,2} |
+|----------|-------------|-----|---------------|
+| time (RoPE-on-time) | **0.164** | 0.057 | 0.227, 0.115, 0.151 |
+| index (RoPE-on-index) | 0.140 | 0.074 | 0.220, 0.127, 0.074 |
+| none (no RoPE) | 0.112 | 0.052 | 0.164, 0.060, 0.112 |
+
+**Interpretation — directionally yes, statistically inconclusive.** The means order exactly
+as theory predicts (time > index > none): RoPE helps (+0.052 vs none, ~+46% relative) and
+time-keying beats ordinal. **But the seed variance swamps it** — std ~0.05-0.07, individual
+runs span 0.06→0.23 *for the same config*, so time−none is only ~1.2 SEM at n=3. Can't claim
+significance with 3 seeds.
+
+**The bigger lesson (a caveat on earlier experiments).** nano@3000 is *extremely*
+seed-sensitive (±~0.05 PR-AUC). The `time` arm's seed-0 draw (0.227) is essentially E4's
+single-seed nano+Δt number (0.236), but the 3-seed mean is 0.164 — i.e. **E4 measured a
+lucky-high seed, and its +0.017 Δt gain is smaller than the seed noise.** So:
+- **Single-seed nano deltas (esp. E4) are not reliable** — treat as suggestive only.
+- **Larger effects survive the noise and stand:** E3 (PLE/periodic ~0.11 below bucket),
+  the scaling trend (nano→mini→small, E5), and small@6000 (0.49, E6).
+
+**To actually resolve RoPE's contribution:** many more seeds, and/or run on a larger,
+better-trained model (small@6000 was far more stable) which is less seed-sensitive. The
+n=3 nano result is under-powered for a ~0.05 effect.
 
 ---
 

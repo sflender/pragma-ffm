@@ -1,0 +1,15 @@
+{
+  "arm": "pragma_nano_bucket_dt_posnone_s2_asof",
+  "ckpt": "artifacts/pretrain_nano_bucket_dt_posnone_s2.pt",
+  "causal": true,
+  "numeric_mode": "bucket",
+  "train_events": 9719233,
+  "metrics": {
+    "n": 2277180,
+    "n_pos": 2928,
+    "roc_auc": 0.9447487733978208,
+    "pr_auc": 0.11166321920135154,
+    "recall@p0.5": 0.006489071038251366,
+    "recall@p0.9": 0.001366120218579235
+  }
+}
