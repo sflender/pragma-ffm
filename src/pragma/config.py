@@ -46,6 +46,9 @@ class ModelConfig:
     numeric_mode: str = "bucket"        # bucket | ple | periodic
     periodic_n_freq: int = 16           # #frequencies for the periodic embedding
 
+    # --- positional encoding in the History Encoder ---
+    pos_mode: str = "time"              # time (RoPE on event time) | index (RoPE on ordinal) | none
+
     # --- rope ---
     rope_theta: float = 10000.0
     # time is measured in *days* since sequence start; scaled before RoPE.

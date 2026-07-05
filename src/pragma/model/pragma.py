@@ -42,7 +42,14 @@ class MiniPragma(nn.Module):
         """Return (record_emb (B,L,d), field_out (B,L,F,d))."""
         tokens = self.embedder(codes, amount)
         evt, field_out = self.event(tokens)
-        r = self.history(evt, times, mask, causal)
+        # positional signal for the History Encoder attention
+        pm = self.cfg.pos_mode
+        if pm == "index":
+            B, L = times.shape
+            pos = torch.arange(L, device=times.device, dtype=times.dtype).expand(B, L)
+        else:                                   # "time" or "none" (none ignores pos)
+            pos = times
+        r = self.history(evt, pos, mask, causal, use_rope=(pm != "none"))
         return r, field_out
 
     def record_embeddings(self, codes, times, mask, amount=None, causal=False):

@@ -19,7 +19,9 @@ from pragma.utils import count_params, get_device, seed_everything
 
 
 def to_device(batch: dict, device) -> dict:
-    return {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+    # synchronous copy: non_blocking races async MPS transfers when a tensor is
+    # inspected (.cpu()/.item()) before a model op forces stream ordering.
+    return {k: v.to(device) for k, v in batch.items()}
 
 
 def mlm_loss(logits_list, targets):
@@ -60,7 +62,8 @@ def cosine_warmup(step: int, warmup: int, total: int) -> float:
 def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
           device_str: str = "auto", max_steps: int | None = None,
           numeric_mode: str | None = None, tag: str = "",
-          max_seq_len: int | None = None) -> Path:
+          max_seq_len: int | None = None, pos_mode: str | None = None,
+          seed: int | None = None) -> Path:
     preset = get_preset(preset_name)
     tcfg = preset.train
     if max_steps is not None:
@@ -69,6 +72,10 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
         preset.model.numeric_mode = numeric_mode
     if max_seq_len is not None:
         preset.model.max_seq_len = max_seq_len
+    if pos_mode is not None:
+        preset.model.pos_mode = pos_mode
+    if seed is not None:
+        tcfg.seed = seed
     seed_everything(tcfg.seed)
     device = get_device(device_str)
 
@@ -132,9 +139,12 @@ def main() -> None:
     ap.add_argument("--numeric-mode", choices=["bucket", "ple", "periodic"], default=None)
     ap.add_argument("--tag", default="", help="suffix appended to the checkpoint filename")
     ap.add_argument("--max-seq-len", type=int, default=None, help="override context window L")
+    ap.add_argument("--pos-mode", choices=["time", "index", "none"], default=None)
+    ap.add_argument("--seed", type=int, default=None)
     args = ap.parse_args()
     train(args.preset, args.data_dir, args.tokenizer, args.out_dir, args.device,
-          args.max_steps, args.numeric_mode, args.tag, args.max_seq_len)
+          args.max_steps, args.numeric_mode, args.tag, args.max_seq_len,
+          args.pos_mode, args.seed)
 
 
 if __name__ == "__main__":

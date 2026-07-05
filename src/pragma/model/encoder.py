@@ -168,13 +168,14 @@ class RoPEAttention(nn.Module):
         return ang.cos()[:, None], ang.sin()[:, None]        # (B,1,L,dh)
 
     def forward(self, x: torch.Tensor, times: torch.Tensor, key_pad: torch.Tensor,
-                causal: bool = False):
+                causal: bool = False, use_rope: bool = True):
         # x:(B,L,d)  times:(B,L)  key_pad:(B,L) True=real
         B, L, d = x.shape
         qkv = self.qkv(x).reshape(B, L, 3, self.h, self.dh).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]                     # (B,H,L,dh)
-        cos, sin = self._cos_sin(times)
-        q, k = _apply_rope(q, cos, sin), _apply_rope(k, cos, sin)
+        if use_rope:
+            cos, sin = self._cos_sin(times)
+            q, k = _apply_rope(q, cos, sin), _apply_rope(k, cos, sin)
 
         # additive mask: -1e4 fully masks (scores are O(10)); finite avoids MPS NaNs.
         attn_mask = torch.zeros(B, 1, 1, L, device=x.device, dtype=q.dtype)
@@ -200,8 +201,8 @@ class HistoryLayer(nn.Module):
             nn.Linear(d_model, d_ff), nn.GELU(), nn.Dropout(dropout), nn.Linear(d_ff, d_model))
         self.drop = nn.Dropout(dropout)
 
-    def forward(self, x, times, key_pad, causal=False):
-        x = x + self.drop(self.attn(self.n1(x), times, key_pad, causal))
+    def forward(self, x, times, key_pad, causal=False, use_rope=True):
+        x = x + self.drop(self.attn(self.n1(x), times, key_pad, causal, use_rope))
         x = x + self.drop(self.ff(self.n2(x)))
         return x
 
@@ -215,7 +216,7 @@ class HistoryEncoder(nn.Module):
             [HistoryLayer(d_model, n_heads, d_ff, dropout, theta) for _ in range(n_layers)])
         self.norm = nn.LayerNorm(d_model)
 
-    def forward(self, x, times, key_pad, causal=False):
+    def forward(self, x, times, key_pad, causal=False, use_rope=True):
         for lyr in self.layers:
-            x = lyr(x, times, key_pad, causal)
+            x = lyr(x, times, key_pad, causal, use_rope)
         return self.norm(x)
