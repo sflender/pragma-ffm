@@ -1,0 +1,15 @@
+{
+  "arm": "pragma_nano_bucket_dt_swasof",
+  "ckpt": "artifacts/pretrain_nano_bucket_dt.pt",
+  "eval": "sliding_window_asof",
+  "L": 96,
+  "test_base_rate": 0.019146264908976772,
+  "metrics": {
+    "n": 152928,
+    "n_pos": 2928,
+    "roc_auc": 0.9528628961748635,
+    "pr_auc": 0.6426641196615347,
+    "recall@p0.5": 0.7114071038251366,
+    "recall@p0.9": 0.2677595628415301
+  }
+}

@@ -66,21 +66,28 @@ def fig_scaling():
 
 
 def fig_seqlen():
-    pts = [(64, "small_bucket_dt_6k_L64"), (128, "small_bucket_dt_6k"), (256, "small_bucket_dt_6k_L256")]
-    Ls, ys = [], []
-    for L, name in pts:
+    # eval-window sweep on the L=256 model: short windows fine, long window collapses
+    # (RoPE-on-raw-time aliasing over long spans). Files: L256 @ w64 / w128 / native(256).
+    pts = [(64, "small_bucket_dt_6k_L256_w64"), (128, "small_bucket_dt_6k_L256_w128"),
+           (256, "small_bucket_dt_6k_L256")]
+    Ws, ys = [], []
+    for w, name in pts:
         m = load(name)
-        if m: Ls.append(L); ys.append(m["pr_auc"])
+        if m: Ws.append(w); ys.append(m["pr_auc"])
     if len(ys) < 2: return
     fig, ax = plt.subplots(figsize=(6.4, 4.4))
-    ax.plot(Ls, ys, "-o", color=BLUE, lw=2, ms=8)
-    for L, y in zip(Ls, ys): ax.annotate(f"{y:.3f}", (L, y), (L, y + 0.015), fontsize=9, ha="center")
+    ax.plot(Ws, ys, "-o", color=BLUE, lw=2, ms=8)
+    for w, y in zip(Ws, ys): ax.annotate(f"{y:.3f}", (w, y), (w, y + 0.03), fontsize=9, ha="center")
+    if 256 in Ws:
+        ax.annotate("collapse\n(RoPE time-aliasing\nover long spans)", (256, ys[Ws.index(256)]),
+                    (150, 0.45), fontsize=8.5, color=GRAY, ha="center",
+                    arrowprops=dict(arrowstyle="->", color=GRAY))
     baseline(ax)
-    ax.set_xscale("log", base=2); ax.set_xticks(Ls); ax.set_xticklabels(Ls)
-    ax.set_xlabel("context length  L  (events, log scale)"); ax.set_ylabel("test PR-AUC")
-    ax.set_title("(2) Scaling with sequence length  (small, as-of-date)")
+    ax.set_xscale("log", base=2); ax.set_xticks(Ws); ax.set_xticklabels(Ws)
+    ax.set_xlabel("eval context window  (events, log scale)"); ax.set_ylabel("test PR-AUC")
+    ax.set_title("(2) Effect of eval window length  (small L=256 model)")
     ax.set_ylim(0, 0.9)
-    ax.text(0.02, 0.02, "method (a); step-matched 6k (epochs differ by L — see E10)",
+    ax.text(0.02, 0.02, "method (a); same backbone, only the scoring window varies",
             transform=ax.transAxes, fontsize=8, color=GRAY)
     fig.tight_layout(); fig.savefig(OUT / "fig2_seq_length.png"); plt.close(fig)
 

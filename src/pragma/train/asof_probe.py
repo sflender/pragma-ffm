@@ -57,13 +57,14 @@ def embed(model, ds, device, batch_size):
     return np.concatenate(embs), np.concatenate(labs)
 
 
-def run(ckpt, data_dir, tok_path, out_json, train_max_neg, test_max_neg, batch_size, device_str):
+def run(ckpt, data_dir, tok_path, out_json, train_max_neg, test_max_neg, batch_size, device_str,
+        window_len=None):
     t0 = time.time()
     device = get_device(device_str)
     seed_everything(0)
     tok = Tokenizer.load(tok_path)
     model, preset_name, mcfg = load_backbone(ckpt, tok, device)
-    L = mcfg.max_seq_len
+    L = window_len or mcfg.max_seq_len          # allow overriding the eval window length
     rng = np.random.default_rng(0)
 
     tr = build_targets(data_dir, "train", rng, train_max_neg)
@@ -98,12 +99,15 @@ def main():
     ap.add_argument("--test-max-neg", type=int, default=150000)
     ap.add_argument("--batch-size", type=int, default=512)
     ap.add_argument("--device", default="auto")
+    ap.add_argument("--window-len", type=int, default=None,
+                    help="override eval window length (default = model's max_seq_len)")
     args = ap.parse_args()
     if args.out is None:
         stem = Path(args.ckpt).stem.replace("pretrain_", "")
-        args.out = f"artifacts/eval_{stem}_swasof.json"
+        wl = f"_w{args.window_len}" if args.window_len else ""
+        args.out = f"artifacts/eval_{stem}{wl}_swasof.json"
     run(args.ckpt, args.data_dir, args.tokenizer, args.out,
-        args.train_max_neg, args.test_max_neg, args.batch_size, args.device)
+        args.train_max_neg, args.test_max_neg, args.batch_size, args.device, args.window_len)
 
 
 if __name__ == "__main__":

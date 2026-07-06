@@ -20,6 +20,11 @@ bottom. Summary tables in the README point here for the full reasoning.
 
 ### Consolidated results (as-of-date / leakage-free, test set = 2.28M txns)
 
+> ⚠️ **The tables in E0–E9 use eval method (b)** (causal-masked tiling), later found to
+> under-context events and deviate from PRAGMA. **See [E10](#e10) for the corrected
+> method-(a) numbers** (sliding-window as-of-date) — the ones to cite. Qualitative findings
+> mostly hold; the Δt effect shrinks from +0.05 to +0.006 under (a).
+
 | arm | ROC-AUC | PR-AUC | R@P0.5 | R@P0.9 |
 |-----|---------|--------|--------|--------|
 | LightGBM (causal features) | 0.940 | 0.043 | 0.000 | 0.000 |
@@ -347,6 +352,66 @@ lucky-high seed, and its +0.017 Δt gain is smaller than the seed noise.** So:
 **To actually resolve RoPE's contribution:** many more seeds, and/or run on a larger,
 better-trained model (small@6000 was far more stable) which is less seed-sensitive. The
 n=3 nano result is under-powered for a ~0.05 effect.
+
+---
+
+## E10 — Corrected evaluation (sliding-window as-of-date) + the L=256 eval-window collapse
+
+**Why:** E1–E9 scored with method **(b)** — causal-masked *tiling* — which (i) under-contexts
+events (~L/2 avg), (ii) applies a causal mask the *bidirectional* MLM model never trained with,
+and (iii) isn't PRAGMA-faithful. Method **(a)**: for each target txn, a window *ending at it*,
+run the frozen backbone **bidirectionally** (no future in the window), read the **last-position**
+embedding — used for both probe-fit and scoring. This is exactly PRAGMA's "final `[EVT]` at the
+evaluation point." **No retraining** — re-eval of saved checkpoints.
+
+**Setup:** stratified test subsample (all frauds + 150k non-frauds → base rate **1.9%**), same
+across all arms. The higher base rate lifts absolute PR-AUC, so compare arms **to each other**,
+not to the old full-test (0.13%-base) numbers.
+
+**Results (method a, base rate 1.9%):**
+
+| arm | PR-AUC | R@P0.5 | R@P0.9 |
+|-----|--------|--------|--------|
+| LightGBM | 0.369 | 0.418 | 0.000 |
+| PRAGMA nano | 0.643 | 0.711 | 0.268 |
+| PRAGMA mini | 0.695 | 0.716 | 0.432 |
+| **PRAGMA small (L128)** | **0.786** | 0.819 | 0.579 |
+| small −Δt | 0.780 | 0.810 | 0.578 |
+| small −RoPE | 0.714 | 0.753 | 0.401 |
+
+**Corrected findings (vs the method-(b) versions):**
+- **FFM ≫ LightGBM** (same subsample): small **0.786 vs 0.369 (+113%)**; R@P0.9 **0.58 vs 0.00**
+  (LightGBM can't reach 90% precision at all). Headline holds, operating points stronger.
+- **Scaling:** clean monotonic **0.643 → 0.695 → 0.786** (nano→mini→small).
+- **Δt: +0.006 — marginal** (was +0.050 under (b)). With full-context windows the explicit Δt
+  field adds ~nothing (the model gets timing from RoPE + full context). **E4 was distorted by (b).**
+- **RoPE: +0.072** (was +0.115) — still clearly matters.
+
+**The L=256 eval-window collapse (a real, instructive result).** Trained-and-scored at L, the
+seq-len curve looked like a cliff — L64 0.792 / L128 0.786 / **L256 0.298**. But L256 *trained*
+fine (best MLM loss 1.10, 0 skips). Diagnosis: re-scoring the **same** L256 checkpoint at shorter
+windows recovers it — and it's the **best** backbone:
+
+| L256 model, eval window | 64 | 128 | 256 |
+|-------------------------|----|-----|-----|
+| PR-AUC | **0.817** | 0.809 | 0.298 |
+
+So the cliff is a **long-eval-window pathology, not a capacity/context ceiling.** Almost certainly
+**RoPE-on-raw-time aliasing**: L256 windows span ~250 days (median; p90 615), while the highest
+rotary frequency wraps every ~6 days — over long spans the sequence-level readout is scrambled.
+MLM survives (it leans on the within-transaction field encoder); the downstream *record* embedding
+does not.
+
+**Takeaways:**
+- **Train with generous context** (the L256 backbone read-short is the best, 0.817), but **score
+  with a short window (~64)** — both because fraud is short-range (E7) *and* to avoid long-window
+  aliasing.
+- To use long eval windows, fix the time encoding: **log-time or learned-frequency RoPE**.
+- The eval method genuinely mattered: (b) inflated Δt (+0.05 → +0.006) and would have mis-shown
+  seq-len. (a) is correct and PRAGMA-faithful.
+
+**Caveats:** single seed; subsample base rate 1.9% (absolute PR-AUC not comparable to the earlier
+full-test numbers — relative comparisons only). Figures: `figures/fig{1..4}` regenerated from (a).
 
 ---
 
