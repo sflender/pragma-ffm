@@ -1,0 +1,15 @@
+{
+  "arm": "pragma_small_bucket_dt_6k_posnone_asof",
+  "ckpt": "artifacts/pretrain_small_bucket_dt_6k_posnone.pt",
+  "causal": true,
+  "numeric_mode": "bucket",
+  "train_events": 12896562,
+  "metrics": {
+    "n": 2277187,
+    "n_pos": 2928,
+    "roc_auc": 0.9720031908333311,
+    "pr_auc": 0.38090316468311475,
+    "recall@p0.5": 0.3480191256830601,
+    "recall@p0.9": 0.13763661202185792
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "arm": "pragma_small_bucket_dt_6k_L64_asof",
+  "ckpt": "artifacts/pretrain_small_bucket_dt_6k_L64.pt",
+  "causal": true,
+  "numeric_mode": "bucket",
+  "train_events": 6507561,
+  "metrics": {
+    "n": 2277158,
+    "n_pos": 2928,
+    "roc_auc": 0.975550999709047,
+    "pr_auc": 0.4570321298848927,
+    "recall@p0.5": 0.4655054644808743,
+    "recall@p0.9": 0.16222677595628415
+  }
+}

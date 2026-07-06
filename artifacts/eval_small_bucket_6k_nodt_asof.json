@@ -1,0 +1,15 @@
+{
+  "arm": "pragma_small_bucket_6k_nodt_asof",
+  "ckpt": "artifacts/pretrain_small_bucket_6k_nodt.pt",
+  "causal": true,
+  "numeric_mode": "bucket",
+  "train_events": 12901046,
+  "metrics": {
+    "n": 2277187,
+    "n_pos": 2928,
+    "roc_auc": 0.9781233029736459,
+    "pr_auc": 0.4458984518804166,
+    "recall@p0.5": 0.5003415300546448,
+    "recall@p0.9": 0.06147540983606557
+  }
+}
