@@ -66,28 +66,27 @@ def fig_scaling():
 
 
 def fig_seqlen():
-    # eval-window sweep on the L=256 model: short windows fine, long window collapses
-    # (RoPE-on-raw-time aliasing over long spans). Files: L256 @ w64 / w128 / native(256).
-    pts = [(64, "small_bucket_dt_6k_L256_w64"), (128, "small_bucket_dt_6k_L256_w128"),
+    # each model trained AND scored at its OWN context length L (used as designed)
+    pts = [(64, "small_bucket_dt_6k_L64"), (128, "small_bucket_dt_6k"),
            (256, "small_bucket_dt_6k_L256")]
-    Ws, ys = [], []
-    for w, name in pts:
+    Ls, ys = [], []
+    for L, name in pts:
         m = load(name)
-        if m: Ws.append(w); ys.append(m["pr_auc"])
+        if m: Ls.append(L); ys.append(m["pr_auc"])
     if len(ys) < 2: return
-    fig, ax = plt.subplots(figsize=(6.4, 4.4))
-    ax.plot(Ws, ys, "-o", color=BLUE, lw=2, ms=8)
-    for w, y in zip(Ws, ys): ax.annotate(f"{y:.3f}", (w, y), (w, y + 0.03), fontsize=9, ha="center")
-    if 256 in Ws:
-        ax.annotate("collapse\n(RoPE time-aliasing\nover long spans)", (256, ys[Ws.index(256)]),
-                    (150, 0.45), fontsize=8.5, color=GRAY, ha="center",
+    fig, ax = plt.subplots(figsize=(6.6, 4.4))
+    ax.plot(Ls, ys, "-o", color=BLUE, lw=2, ms=8)
+    for L, y in zip(Ls, ys): ax.annotate(f"{y:.3f}", (L, y), (L, y + 0.03), fontsize=9, ha="center")
+    if 256 in Ls:
+        ax.annotate("L=256 collapses at its native window\n(recovers to ~0.81 scored at L≤128;\nlong-window readout artifact — E10)",
+                    (256, ys[Ls.index(256)]), (92, 0.44), fontsize=8, color=GRAY, ha="left",
                     arrowprops=dict(arrowstyle="->", color=GRAY))
     baseline(ax)
-    ax.set_xscale("log", base=2); ax.set_xticks(Ws); ax.set_xticklabels(Ws)
-    ax.set_xlabel("eval context window  (events, log scale)"); ax.set_ylabel("test PR-AUC")
-    ax.set_title("(2) Effect of eval window length  (small L=256 model)")
+    ax.set_xscale("log", base=2); ax.set_xticks(Ls); ax.set_xticklabels(Ls)
+    ax.set_xlabel("training context length  L  (trained & scored at L)"); ax.set_ylabel("test PR-AUC")
+    ax.set_title("(2) Scaling with training context length  (small)")
     ax.set_ylim(0, 0.9)
-    ax.text(0.02, 0.02, "method (a); same backbone, only the scoring window varies",
+    ax.text(0.02, 0.02, "method (a); each model trained AND scored at its own L",
             transform=ax.transAxes, fontsize=8, color=GRAY)
     fig.tight_layout(); fig.savefig(OUT / "fig2_seq_length.png"); plt.close(fig)
 

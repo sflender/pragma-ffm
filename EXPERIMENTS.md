@@ -396,11 +396,16 @@ windows recovers it — and it's the **best** backbone:
 |-------------------------|----|-----|-----|
 | PR-AUC | **0.817** | 0.809 | 0.298 |
 
-So the cliff is a **long-eval-window pathology, not a capacity/context ceiling.** Almost certainly
-**RoPE-on-raw-time aliasing**: L256 windows span ~250 days (median; p90 615), while the highest
-rotary frequency wraps every ~6 days — over long spans the sequence-level readout is scrambled.
-MLM survives (it leans on the within-transaction field encoder); the downstream *record* embedding
-does not.
+So the cliff is a **long-window readout pathology, not a capacity/context ceiling** — the same
+checkpoint recovers to 0.81 at short windows. **Mechanism is a hypothesis, not proven:** most
+likely **attention dilution** — the last-position readout aggregates over ~250 mostly-irrelevant
+events (fraud is short-range, E7) — plausibly worsened by **RoPE-on-raw-time aliasing** (L256
+windows span ~250 days; the top rotary frequency wraps every ~6 days), which would leave the model
+unable to down-weight distant events by time. Wrinkle against pure aliasing: the model was
+*trained* at L=256 yet fails at its native window and works at shorter ones — consistent with MLM
+being a *local* task (best MLM loss 1.10 via local reconstruction) that never forced long-range
+attention to be calibrated. **Isolating RoPE-vs-dilution is a TODO** (span-binned PR-AUC, or a
+log-time / index-RoPE retrain).
 
 **Takeaways:**
 - **Train with generous context** (the L256 backbone read-short is the best, 0.817), but **score
