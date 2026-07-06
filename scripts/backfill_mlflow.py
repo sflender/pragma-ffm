@@ -19,10 +19,13 @@ BIG_DEFAULT_L = 128
 
 
 def parse_arm(arm: str) -> dict:
-    if arm == "lightgbm":
+    if arm.startswith("lightgbm"):
         return {"arm": arm, "model": "lightgbm", "numeric_mode": "none", "dt": False,
                 "pos_mode": "n/a", "seq_len": 0, "seed": 0, "steps": 0, "readout": "n/a"}
     toks = arm.split("_")                     # pragma_<size>_<numeric>_..._<readout>
+    if len(toks) < 3:
+        return {"arm": arm, "model": "?", "numeric_mode": "?", "dt": False,
+                "pos_mode": "n/a", "seq_len": 0, "seed": 0, "steps": 0, "readout": "n/a"}
     size = toks[1]
     rest = toks[3:]
     L = next((int(t[1:]) for t in rest if t.startswith("L") and t[1:].isdigit()), None)
