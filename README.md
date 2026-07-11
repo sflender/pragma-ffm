@@ -30,6 +30,28 @@ event-sequence FM work. A `--split-mode temporal` option exists but the TabForme
 rate swings wildly by year (2020 has zero fraud), so temporal is heavily shift-confounded
 (LightGBM ROC-AUC drops 0.94 → 0.79). See findings below.
 
+### Getting the data
+
+The dataset is **not redistributed here** (2.7 GB raw / ~930 MB processed, and it has a
+canonical home). Regenerating it is deterministic, so you get byte-identical arrays:
+
+1. **Download the raw file** from IBM (Apache-2.0): **`github.com/IBM/TabFormer`** →
+   `data/credit_card/card_transaction.v1.tgz` (git-lfs; an IBM Box mirror is also linked
+   from that repo). Extract to `data/raw/TabFormer/data/credit_card/card_transaction.v1.csv`.
+2. **Regenerate the processed arrays** (the Δt variant used for the headline models):
+   ```bash
+   python -m pragma.data.parse  --split-mode seq          # -> data/processed/ ; seed=0
+   python -m pragma.data.encode --include-dt \
+       --out-dir data/processed_dt --tokenizer artifacts/tokenizer_dt.json
+   ```
+
+**Why this reproduces exactly:** the train/val/test assignment is a seeded permutation of
+the 6,139 `(user,card)` sequences (`np.random.default_rng(seed=0)` in `parse.py`), and the
+tokenizer (vocab / hashing / quantile buckets, fit on train only) is committed to the repo
+(`artifacts/tokenizer_dt.json`) — so the splits and encodings are identical across machines.
+Please cite **Padhi et al. 2020 (TabFormer)** and keep the Apache-2.0 license if you
+redistribute any derived copy.
+
 ## Model — mini-PRAGMA (`src/pragma/model/`)
 
 Faithful-but-scaled version of the paper's architecture:
@@ -53,8 +75,8 @@ Presets (`config.py`): **nano ~2.9M**, **small ~13.7M** (analogue of PRAGMA-S).
 # 0. install (torch already present; installs lightgbm/sklearn/pyarrow/tqdm/einops)
 pip install -e .
 
-# 1. download data (git-lfs) then extract  (done once)
-#    data/raw/TabFormer/data/credit_card/card_transaction.v1.csv
+# 1. get the data (see "Getting the data": download from github.com/IBM/TabFormer ->
+#    data/raw/TabFormer/data/credit_card/card_transaction.v1.csv)
 
 # 2. parse -> typed parquet + splits; then fit tokenizer + pre-encode to int arrays
 python -m pragma.data.parse --split-mode seq
@@ -122,11 +144,12 @@ model, preset, cfg = load_backbone("artifacts/pretrain_small_bucket_dt_6k.pt", t
 **B. Reproduce end-to-end from scratch** (the data is *not* redistributed — regenerate it):
 
 ```bash
-# B1. download IBM TabFormer (Apache-2.0) via git-lfs ->
-#     data/raw/TabFormer/data/credit_card/card_transaction.v1.csv
-# B2. parse -> parquet + per-(user,card) split, then fit tokenizer + pre-encode
-python -m pragma.data.parse --split-mode seq
-python -m pragma.data.encode --include-dt            # writes data/processed_dt/
+# B1. download IBM TabFormer (Apache-2.0) from github.com/IBM/TabFormer ->
+#     data/raw/TabFormer/data/credit_card/card_transaction.v1.csv   (see "Getting the data")
+# B2. parse -> parquet + deterministic per-(user,card) split, then fit tokenizer + encode
+python -m pragma.data.parse  --split-mode seq
+python -m pragma.data.encode --include-dt --out-dir data/processed_dt \
+    --tokenizer artifacts/tokenizer_dt.json          # -> data/processed_dt/
 # B3. pretrain (small = 6k steps ~2h on M4 Max; nano/mini = 3k)
 python -m pragma.train.pretrain --preset small --numeric-mode bucket --max-steps 6000 \
     --data-dir data/processed_dt --tokenizer artifacts/tokenizer_dt.json --tag _dt_6k
