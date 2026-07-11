@@ -1,5 +1,5 @@
 # data & artifacts (regenerate via the documented pipeline; too large / binary for git)
-data/
+/data/
 artifacts/*.pt
 mlruns/
 mlflow.db
