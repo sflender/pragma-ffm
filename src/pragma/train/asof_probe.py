@@ -97,7 +97,9 @@ def main():
     ap.add_argument("--out", default=None)
     ap.add_argument("--train-max-neg", type=int, default=150000)
     ap.add_argument("--test-max-neg", type=int, default=150000)
-    ap.add_argument("--batch-size", type=int, default=512)
+    ap.add_argument("--batch-size", type=int, default=256,
+                    help="embedding batch size; lower to ~128 if the GPU OOMs (d_model=256 small). "
+                         "Does not affect results — embeddings are per-window.")
     ap.add_argument("--device", default="auto")
     ap.add_argument("--window-len", type=int, default=None,
                     help="override eval window length (default = model's max_seq_len)")

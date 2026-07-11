@@ -29,6 +29,8 @@ def build(parquet: str, out_dir: str, tok_path: str,
           include_dt: bool = False, n_dt_buckets: int = 20,
           dt_min_s: float = 1.0, dt_max_s: float = 31_536_000.0) -> None:
     t0 = time.time()
+    Path(out_dir).mkdir(parents=True, exist_ok=True)          # create out dir if missing
+    Path(tok_path).parent.mkdir(parents=True, exist_ok=True)  # ...and the tokenizer's dir
     df = pd.read_parquet(parquet)
     print(f"[encode] loaded {len(df):,} rows in {time.time()-t0:.1f}s")
 
