@@ -145,7 +145,9 @@ def _rotate_half(x: torch.Tensor) -> torch.Tensor:
 
 
 def _apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
-    # x: (B,H,L,dh); cos/sin: (B,1,L,dh)
+    # x: (B,H,L,dh); cos/sin: (B,1,L,dh). Match x's dtype so bf16 autocast doesn't get
+    # promoted back to fp32 here (which would make q/k fp32 while v stays bf16 and break SDPA).
+    cos, sin = cos.to(x.dtype), sin.to(x.dtype)
     return x * cos + _rotate_half(x) * sin
 
 
