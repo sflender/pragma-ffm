@@ -63,7 +63,8 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
           device_str: str = "auto", max_steps: int | None = None,
           numeric_mode: str | None = None, tag: str = "",
           max_seq_len: int | None = None, pos_mode: str | None = None,
-          seed: int | None = None, use_field_emb: bool = True) -> Path:
+          seed: int | None = None, use_field_emb: bool = True,
+          stride: int | None = None) -> Path:
     preset = get_preset(preset_name)
     tcfg = preset.train
     if max_steps is not None:
@@ -81,13 +82,14 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
     device = get_device(device_str)
 
     tok = Tokenizer.load(tok_path)
-    ds = WindowDataset(data_dir, "train", preset.model.max_seq_len)
+    ds = WindowDataset(data_dir, "train", preset.model.max_seq_len, stride=stride)
     loader = DataLoader(ds, batch_size=tcfg.batch_size, shuffle=True, drop_last=True,
                         num_workers=0)
     model = build_model(tok, preset, device)
     print(f"[pretrain] preset={preset_name} numeric_mode={preset.model.numeric_mode} "
+          f"stride={stride or preset.model.max_seq_len} windows={len(ds):,} "
           f"params={count_params(model):,} device={device} "
-          f"windows={len(ds):,} steps={tcfg.max_steps}")
+          f"steps={tcfg.max_steps}")
 
     opt = torch.optim.AdamW(model.parameters(), lr=tcfg.lr, weight_decay=tcfg.weight_decay)
     sched = torch.optim.lr_scheduler.LambdaLR(
@@ -144,10 +146,13 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--no-field-emb", action="store_true",
                     help="ablation: disable the per-field identity embedding in the EventEncoder")
+    ap.add_argument("--stride", type=int, default=None,
+                    help="training-window stride; <max_seq_len gives overlapping windows "
+                         "(more examples). Default = max_seq_len (non-overlapping tiling).")
     args = ap.parse_args()
     train(args.preset, args.data_dir, args.tokenizer, args.out_dir, args.device,
           args.max_steps, args.numeric_mode, args.tag, args.max_seq_len,
-          args.pos_mode, args.seed, use_field_emb=not args.no_field_emb)
+          args.pos_mode, args.seed, use_field_emb=not args.no_field_emb, stride=args.stride)
 
 
 if __name__ == "__main__":
