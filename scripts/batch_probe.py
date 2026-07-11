@@ -27,7 +27,7 @@ def _sync(dev):
         torch.mps.synchronize()
 
 
-def probe_size(preset, tok, ds, device, bs, iters=12, warmup=4):
+def probe_size(preset, tok, ds, device, bs, iters=12, warmup=4, use_amp=False):
     """One batch size: peak GPU mem, sec/step, samples/s. Returns None if OOM."""
     if device.type == "cuda":
         torch.cuda.empty_cache(); torch.cuda.reset_peak_memory_stats()
@@ -39,7 +39,8 @@ def probe_size(preset, tok, ds, device, bs, iters=12, warmup=4):
     try:
         def one():
             b = to_device(next(it), device, non_blocking=device.type == "cuda")
-            loss, _, _ = mlm_step(model, b, preset.train)
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_amp):
+                loss, _, _ = mlm_step(model, b, preset.train)
             opt.zero_grad(set_to_none=True); loss.backward(); opt.step()
         for _ in range(warmup):
             one()
@@ -59,23 +60,28 @@ def probe_size(preset, tok, ds, device, bs, iters=12, warmup=4):
         del model, opt
 
 
-def data_path_timing(preset, tok, ds, device, bs, iters=20):
+def data_path_timing(preset, tok, ds, device, bs, iters=20, use_amp=False):
     """Split a step into: fetch+H2D transfer vs GPU compute (fwd+bwd+opt)."""
     loader = DataLoader(ds, batch_size=bs, shuffle=True, drop_last=True,
                         num_workers=0, pin_memory=device.type == "cuda")
     model = build_model(tok, preset, device); model.train()
     opt = torch.optim.AdamW(model.parameters(), lr=3e-4)
     it = iter(loader)
+
+    def step(b):
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_amp):
+            loss, _, _ = mlm_step(model, b, preset.train)
+        opt.zero_grad(); loss.backward(); opt.step()
+
     for _ in range(4):  # warmup
-        b = to_device(next(it), device, non_blocking=device.type == "cuda")
-        loss, _, _ = mlm_step(model, b, preset.train); opt.zero_grad(); loss.backward(); opt.step()
+        step(to_device(next(it), device, non_blocking=device.type == "cuda"))
     _sync(device)
     t_data = t_compute = 0.0
     for _ in range(iters):
         t0 = time.perf_counter()
         raw = next(it); b = to_device(raw, device, non_blocking=device.type == "cuda"); _sync(device)
         t1 = time.perf_counter()
-        loss, _, _ = mlm_step(model, b, preset.train); opt.zero_grad(); loss.backward(); opt.step(); _sync(device)
+        step(b); _sync(device)
         t2 = time.perf_counter()
         t_data += t1 - t0; t_compute += t2 - t1
     tot = t_data + t_compute
@@ -90,18 +96,20 @@ def main():
     ap.add_argument("--tokenizer", default="artifacts/tokenizer_dt.json")
     ap.add_argument("--device", default="auto")
     ap.add_argument("--sizes", type=int, nargs="+", default=[128, 256, 512, 1024, 2048])
+    ap.add_argument("--dtype", choices=["fp32", "bf16"], default="fp32")
     args = ap.parse_args()
 
     device = get_device(args.device)
+    use_amp = args.dtype == "bf16" and device.type == "cuda"
     tok = Tokenizer.load(args.tokenizer)
     preset = get_preset(args.preset)
     ds = WindowDataset(args.data_dir, "train", preset.model.max_seq_len)
     print(f"[probe] preset={args.preset} L={preset.model.max_seq_len} device={device} "
-          f"windows={len(ds):,}")
+          f"dtype={args.dtype} amp={use_amp} windows={len(ds):,}")
 
     best = None
     for bs in args.sizes:
-        r = probe_size(preset, tok, ds, device, bs)
+        r = probe_size(preset, tok, ds, device, bs, use_amp=use_amp)
         if r is None:
             print(f"  bs={bs:>5}  OOM"); break
         print(f"  bs={bs:>5}  {r['sec_step']*1e3:7.1f} ms/step  "
@@ -111,7 +119,7 @@ def main():
     if best:
         print(f"[probe] throughput-optimal: bs={best['bs']} "
               f"({best['samples_s']:.0f} samples/s, {best['peak_gb']:.1f} GB)")
-        dp = data_path_timing(preset, tok, ds, device, best["bs"])
+        dp = data_path_timing(preset, tok, ds, device, best["bs"], use_amp=use_amp)
         print(f"[probe] data-path @bs={best['bs']}: fetch+H2D {dp['data_ms']:.1f} ms | "
               f"compute {dp['compute_ms']:.1f} ms | data = {dp['data_frac']*100:.1f}% of step")
         print(f"BEST_BS={best['bs']}")   # machine-readable for the training driver
