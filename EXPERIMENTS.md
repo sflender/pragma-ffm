@@ -420,6 +420,58 @@ full-test numbers — relative comparisons only). Figures: `figures/fig{1..4}` r
 
 ---
 
+## E11 — Field-embedding ablation: is the per-field identity vector redundant?
+
+**Question:** Each token in the Event Encoder is `value_emb(global_id) + field_emb(field)`, where
+`field_emb` is a learned per-field identity vector (BERT segment-embedding analogue). But
+`value_emb` is indexed by *global* id = `local_id + per-field offset`, so each field already
+occupies a **disjoint block** of the value table — field identity leaks in through that side
+channel. So does the explicit `field_emb` earn its keep, or is it redundant?
+
+**Setup:** `small`, bucket + Δt, 6000 steps, seed 0, L=128 — *identical* to the E6/E10 baseline,
+only `--no-field-emb` differs (flag added to `pretrain.py`; `field_emb` module kept in the
+checkpoint but not added in the forward pass). Two signals: (1) as-of-date PR-AUC (method a, same
+subsample); (2) **held-out val MLM loss** with fixed seed + fixed batch order + identical masking
+(`scripts/eval_mlm.py`) — a much lower-variance signal than the downstream probe.
+
+| field_emb | test PR-AUC (a) | ROC-AUC | R@P0.5 | val MLM loss |
+|-----------|-----------------|---------|--------|---------------|
+| **ON** seed 0 (baseline) | 0.7860 | 0.9807 | 0.819 | 1.447 |
+| **ON** seed 1 | — | — | — | 1.252 |
+| **OFF** seed 0 (ablated) | 0.7874 | 0.9841 | 0.836 | 1.282 |
+
+**Result — `field_emb` is redundant / neutral (no real effect on either metric):**
+- **Downstream: no effect.** ΔPR-AUC = +0.0014, well inside the ±0.005 seed band.
+- **Pretraining: also no effect — and a methodology lesson.** The ablation's MLM loss (1.282)
+  *first looked* like an improvement over the seed-0 ON baseline (1.447). But measuring a **second
+  ON seed (1.252)** exposed that as an artifact: **MLM-loss seed variance is ~0.2**, *larger* than
+  the apparent 0.165 "effect," and the OFF run (1.282) sits comfortably inside the ON range
+  [1.252, 1.447]. The seed-0 ON baseline was simply an unlucky run. My initial "removing field_emb
+  *helps* MLM" claim was noise and is **retracted**.
+
+**Why neutral (as expected):** field identity is already carried — cleanly and for free — by the
+value-table offsets (disjoint id blocks, *including* a per-field `[MASK]` row at `offset+1`, so even
+masked cells keep their identity). The extra learned `field_emb` is a redundant constant the model
+can trivially learn to ignore (a constant is subtractable → it *can't* hurt reconstruction at
+convergence, and indeed doesn't). Confirms the prediction: small/zero effect, unlike RoPE (+0.072,
+which had no side channel).
+
+**Scope caveat (why this won't generalize):** redundancy here is a property of our **single,
+dense, fixed-schema** event type — every transaction has the identical 11 fields in the same slots,
+so the offset scheme fully determines identity. In a real FFM with **heterogeneous event types**
+(payment / withdrawal / transfer / login, each a different field set) or **sparse/variable** fields,
+you can't free-ride identity off a fixed offset layout, and the field/key embedding becomes
+load-bearing. So E11 says "field_emb is free to drop *on TabFormer*," not "field embeddings are
+useless in general."
+
+**Caveats:** PR-AUC single-seed (null is safe, Δ ≪ noise). MLM loss now has 2 ON seeds + 1 OFF
+seed; the cross-seed spread (~0.2) dwarfs any field_emb effect. An OFF seed 1 would complete the
+2×2 but the within-noise conclusion is already clear. **Lesson: MLM loss is NOT low-variance across
+seeds — never compare a single ablation run to a single baseline.** Artifacts:
+`pretrain_small_bucket_dt_6k_nofe.pt`, `eval_small_bucket_dt_6k_nofe_swasof.json`.
+
+---
+
 ## Engineering notes
 
 - **Timing (M4 Max, MPS):** nano ≈ 0.48 s/step (~13 min/epoch); small ≈ 2.97 s/step
@@ -444,3 +496,10 @@ full-test numbers — relative comparisons only). Figures: `figures/fig{1..4}` r
 - [ ] From-scratch task-specific transformer (the paper's literal "domain-specific" contender).
 - [ ] Temporal-split variant (harder, shift-confounded) for contrast.
 - [ ] Log-transform / learned frequencies for RoPE time input (aliasing at large gaps).
+- [x] Field-embedding ablation (E11): **neutral** — redundant given the value-table offsets, no
+  real effect on PR-AUC or MLM loss (an apparent MLM "drop" was seed noise; MLM-loss seed variance
+  ~0.2). Won't generalize to heterogeneous/sparse-schema FFMs.
+- [ ] Untuned defaults worth a cheap sweep: amount buckets (16/64/256), hash size (4096 →
+  16k/32k, esp. merchant_name which collides ~24 merchants/bucket), merchant_city semantic/geo
+  embedding (real text currently hashed away).
+

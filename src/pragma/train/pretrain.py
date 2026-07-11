@@ -63,7 +63,7 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
           device_str: str = "auto", max_steps: int | None = None,
           numeric_mode: str | None = None, tag: str = "",
           max_seq_len: int | None = None, pos_mode: str | None = None,
-          seed: int | None = None) -> Path:
+          seed: int | None = None, use_field_emb: bool = True) -> Path:
     preset = get_preset(preset_name)
     tcfg = preset.train
     if max_steps is not None:
@@ -76,6 +76,7 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
         preset.model.pos_mode = pos_mode
     if seed is not None:
         tcfg.seed = seed
+    preset.model.use_field_emb = use_field_emb
     seed_everything(tcfg.seed)
     device = get_device(device_str)
 
@@ -141,10 +142,12 @@ def main() -> None:
     ap.add_argument("--max-seq-len", type=int, default=None, help="override context window L")
     ap.add_argument("--pos-mode", choices=["time", "index", "none"], default=None)
     ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--no-field-emb", action="store_true",
+                    help="ablation: disable the per-field identity embedding in the EventEncoder")
     args = ap.parse_args()
     train(args.preset, args.data_dir, args.tokenizer, args.out_dir, args.device,
           args.max_steps, args.numeric_mode, args.tag, args.max_seq_len,
-          args.pos_mode, args.seed)
+          args.pos_mode, args.seed, use_field_emb=not args.no_field_emb)
 
 
 if __name__ == "__main__":

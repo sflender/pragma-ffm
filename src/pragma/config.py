@@ -49,6 +49,9 @@ class ModelConfig:
     # --- positional encoding in the History Encoder ---
     pos_mode: str = "time"              # time (RoPE on event time) | index (RoPE on ordinal) | none
 
+    # --- event encoder: learned per-field identity embedding (ablatable) ---
+    use_field_emb: bool = True          # add field-identity vector to each token in EventEncoder
+
     # --- rope ---
     rope_theta: float = 10000.0
     # time is measured in *days* since sequence start; scaled before RoPE.

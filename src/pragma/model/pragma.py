@@ -21,7 +21,8 @@ class MiniPragma(nn.Module):
         self.tok = tok
         self.cfg = cfg
         d = cfg.d_model
-        self.embedder = FieldValueEmbedder(tok, d, cfg.numeric_mode, cfg.periodic_n_freq)
+        self.embedder = FieldValueEmbedder(tok, d, cfg.numeric_mode, cfg.periodic_n_freq,
+                                           cfg.use_field_emb)
         self.event = EventEncoder(d, cfg.n_heads, cfg.d_ff, cfg.n_event_layers, cfg.dropout)
         self.history = HistoryEncoder(
             d, cfg.n_heads, cfg.d_ff, cfg.n_history_layers, cfg.dropout, cfg.rope_theta)

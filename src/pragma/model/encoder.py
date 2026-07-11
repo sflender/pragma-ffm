@@ -70,10 +70,11 @@ class FieldValueEmbedder(nn.Module):
     """
 
     def __init__(self, tok: Tokenizer, d_model: int, numeric_mode: str = "bucket",
-                 periodic_n_freq: int = 16):
+                 periodic_n_freq: int = 16, use_field_emb: bool = True):
         super().__init__()
         self.F = tok.F
         self.numeric_mode = numeric_mode
+        self.use_field_emb = use_field_emb
         offsets = torch.tensor([f.offset for f in tok.fields], dtype=torch.long)
         self.register_buffer("offsets", offsets, persistent=False)
         self.value_emb = nn.Embedding(tok.V, d_model)
@@ -105,7 +106,7 @@ class FieldValueEmbedder(nn.Module):
                 masked = (codes[:, :, i] == MASK)[..., None]
                 tok[:, :, i, :] = torch.where(masked, self.num_mask[str(i)], emb)
         fidx = torch.arange(self.F, device=codes.device)
-        return tok + self.field_emb(fidx)
+        return tok + self.field_emb(fidx) if self.use_field_emb else tok
 
 
 # --------------------------------------------------------------- event encoder

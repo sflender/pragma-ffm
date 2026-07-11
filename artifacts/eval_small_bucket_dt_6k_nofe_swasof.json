@@ -1,0 +1,15 @@
+{
+  "arm": "pragma_small_bucket_dt_6k_nofe_swasof",
+  "ckpt": "artifacts/pretrain_small_bucket_dt_6k_nofe.pt",
+  "eval": "sliding_window_asof",
+  "L": 128,
+  "test_base_rate": 0.019146264908976772,
+  "metrics": {
+    "n": 152928,
+    "n_pos": 2928,
+    "roc_auc": 0.9840863262750456,
+    "pr_auc": 0.787350176833694,
+    "recall@p0.5": 0.8364071038251366,
+    "recall@p0.9": 0.5027322404371585
+  }
+}
