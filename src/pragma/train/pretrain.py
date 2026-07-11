@@ -18,10 +18,10 @@ from pragma.model.tokenizer import Tokenizer
 from pragma.utils import count_params, get_device, seed_everything
 
 
-def to_device(batch: dict, device) -> dict:
-    # synchronous copy: non_blocking races async MPS transfers when a tensor is
-    # inspected (.cpu()/.item()) before a model op forces stream ordering.
-    return {k: v.to(device) for k, v in batch.items()}
+def to_device(batch: dict, device, non_blocking: bool = False) -> dict:
+    # non_blocking is safe on CUDA with pinned memory (the next model op forces stream
+    # ordering); keep it False on MPS where async transfers can race tensor inspection.
+    return {k: v.to(device, non_blocking=non_blocking) for k, v in batch.items()}
 
 
 def mlm_loss(logits_list, targets):
@@ -64,7 +64,9 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
           numeric_mode: str | None = None, tag: str = "",
           max_seq_len: int | None = None, pos_mode: str | None = None,
           seed: int | None = None, use_field_emb: bool = True,
-          stride: int | None = None) -> Path:
+          stride: int | None = None,
+          batch_size: int | None = None, lr: float | None = None,
+          num_workers: int = 0) -> Path:
     preset = get_preset(preset_name)
     tcfg = preset.train
     if max_steps is not None:
@@ -77,19 +79,25 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
         preset.model.pos_mode = pos_mode
     if seed is not None:
         tcfg.seed = seed
+    if batch_size is not None:
+        tcfg.batch_size = batch_size
+    if lr is not None:
+        tcfg.lr = lr
     preset.model.use_field_emb = use_field_emb
     seed_everything(tcfg.seed)
     device = get_device(device_str)
 
     tok = Tokenizer.load(tok_path)
     ds = WindowDataset(data_dir, "train", preset.model.max_seq_len, stride=stride)
+    pin = device.type == "cuda"
     loader = DataLoader(ds, batch_size=tcfg.batch_size, shuffle=True, drop_last=True,
-                        num_workers=0)
+                        num_workers=num_workers, pin_memory=pin,
+                        persistent_workers=num_workers > 0)
     model = build_model(tok, preset, device)
     print(f"[pretrain] preset={preset_name} numeric_mode={preset.model.numeric_mode} "
-          f"stride={stride or preset.model.max_seq_len} windows={len(ds):,} "
-          f"params={count_params(model):,} device={device} "
-          f"steps={tcfg.max_steps}")
+          f"stride={stride or preset.model.max_seq_len} "
+          f"params={count_params(model):,} device={device} batch={tcfg.batch_size} "
+          f"lr={tcfg.lr:.2e} workers={num_workers} windows={len(ds):,} steps={tcfg.max_steps}")
 
     opt = torch.optim.AdamW(model.parameters(), lr=tcfg.lr, weight_decay=tcfg.weight_decay)
     sched = torch.optim.lr_scheduler.LambdaLR(
@@ -102,7 +110,7 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
 
     while step < tcfg.max_steps:
         for batch in loader:
-            batch = to_device(batch, device)
+            batch = to_device(batch, device, non_blocking=pin)
             loss, ntok, _ = mlm_step(model, batch, tcfg)
             opt.zero_grad(set_to_none=True)
             loss.backward()
@@ -149,10 +157,14 @@ def main() -> None:
     ap.add_argument("--stride", type=int, default=None,
                     help="training-window stride; <max_seq_len gives overlapping windows "
                          "(more examples). Default = max_seq_len (non-overlapping tiling).")
+    ap.add_argument("--batch-size", type=int, default=None, help="override preset batch size")
+    ap.add_argument("--lr", type=float, default=None, help="override preset learning rate")
+    ap.add_argument("--num-workers", type=int, default=0, help="DataLoader worker processes")
     args = ap.parse_args()
     train(args.preset, args.data_dir, args.tokenizer, args.out_dir, args.device,
           args.max_steps, args.numeric_mode, args.tag, args.max_seq_len,
-          args.pos_mode, args.seed, use_field_emb=not args.no_field_emb, stride=args.stride)
+          args.pos_mode, args.seed, use_field_emb=not args.no_field_emb, stride=args.stride,
+          batch_size=args.batch_size, lr=args.lr, num_workers=args.num_workers)
 
 
 if __name__ == "__main__":
