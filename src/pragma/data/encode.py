@@ -27,7 +27,8 @@ SPLIT_CODE = {"train": 0, "val": 1, "test": 2}
 def build(parquet: str, out_dir: str, tok_path: str,
           n_amount_buckets: int, hash_buckets: int,
           include_dt: bool = False, n_dt_buckets: int = 20,
-          dt_min_s: float = 1.0, dt_max_s: float = 31_536_000.0) -> None:
+          dt_min_s: float = 1.0, dt_max_s: float = 31_536_000.0,
+          mname_cat: bool = False, zip_prefix: int | None = None) -> None:
     t0 = time.time()
     Path(out_dir).mkdir(parents=True, exist_ok=True)          # create out dir if missing
     Path(tok_path).parent.mkdir(parents=True, exist_ok=True)  # ...and the tokenizer's dir
@@ -38,8 +39,20 @@ def build(parquet: str, out_dir: str, tok_path: str,
         # time since previous event in the same sequence (causal per-row). first event -> 0.
         df["dt"] = df.groupby("seq_id")["ts"].diff().fillna(0).clip(lower=0)
 
+    # experiment hooks (tokenization ablations) -----------------------------------------
+    kind_overrides: dict = {}
+    if mname_cat:                                # (a) merchant_name: hash -> full identity vocab
+        kind_overrides["merchant_name"] = "cat"
+    if zip_prefix:                               # (b) zip: hash -> N-digit regional prefix as cat
+        df["zip"] = df["zip"].astype(str).str[:zip_prefix]
+        kind_overrides["zip"] = "cat"
+    if kind_overrides:
+        print(f"[encode] kind_overrides={kind_overrides}"
+              + (f" zip_prefix={zip_prefix}" if zip_prefix else ""))
+
     tok = Tokenizer.fit(df[df.split == "train"], n_amount_buckets, hash_buckets,
-                        include_dt, n_dt_buckets, dt_min_s, dt_max_s)
+                        include_dt, n_dt_buckets, dt_min_s, dt_max_s,
+                        kind_overrides=kind_overrides or None)
     tok.save(tok_path)
     print(f"[encode] tokenizer: F={tok.F} fields, V={tok.V} total vocab -> {tok_path}")
     for f in tok.fields:
@@ -77,9 +90,14 @@ def main() -> None:
     ap.add_argument("--include-dt", action="store_true",
                     help="add a log-bucketed time-since-last-event field")
     ap.add_argument("--n-dt-buckets", type=int, default=tc.n_dt_buckets)
+    ap.add_argument("--mname-cat", action="store_true",
+                    help="(experiment a) encode merchant_name as a full identity vocab, not hashed")
+    ap.add_argument("--zip-prefix", type=int, default=None,
+                    help="(experiment b) replace zip with its N-digit regional prefix, as a cat")
     args = ap.parse_args()
     build(args.parquet, args.out_dir, args.tokenizer, args.amount_buckets, args.hash_buckets,
-          args.include_dt, args.n_dt_buckets, tc.dt_min_s, tc.dt_max_s)
+          args.include_dt, args.n_dt_buckets, tc.dt_min_s, tc.dt_max_s,
+          mname_cat=args.mname_cat, zip_prefix=args.zip_prefix)
 
 
 if __name__ == "__main__":

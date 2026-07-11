@@ -71,8 +71,11 @@ class Tokenizer:
     @classmethod
     def fit(cls, df_train: pd.DataFrame, n_amount_buckets: int, hash_buckets: int,
             include_dt: bool = False, n_dt_buckets: int = 20,
-            dt_min_s: float = 1.0, dt_max_s: float = 31_536_000.0) -> "Tokenizer":
+            dt_min_s: float = 1.0, dt_max_s: float = 31_536_000.0,
+            kind_overrides: dict | None = None) -> "Tokenizer":
         specs = list(FIELD_SPECS) + ([("dt", "dtlog")] if include_dt else [])
+        if kind_overrides:                       # experiment hook: e.g. {"merchant_name": "cat"}
+            specs = [(n, kind_overrides.get(n, k)) for n, k in specs]
         fields: list[FieldSpec] = []
         offset = 0
         for name, kind in specs:

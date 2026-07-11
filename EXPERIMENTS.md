@@ -472,6 +472,51 @@ seeds — never compare a single ablation run to a single baseline.** Artifacts:
 
 ---
 
+## E12 — Tokenizing high-cardinality fields: merchant identity vs regional geo
+
+**Question:** the high-cardinality fields (`merchant_name`, `merchant_city`, `zip`) are crc32-hashed
+into 4,096 buckets, which destroys identity/geography (merchant_name collides ~24 merchants/bucket;
+`La Verne`/`Monterey Park` hash to unrelated buckets). Two interventions, each a nano ablation:
+(a) **unhash `merchant_name`** to a full identity vocab; (b) **replace `zip` with its 3-digit regional
+prefix** as a categorical (849 regions — nearby zips share a prefix, giving coarse geography).
+
+**Setup:** nano, bucket+Δt, L=96, 3000 steps, seed 0, as-of-date probe. Encoding overrides via new
+`encode` flags `--mname-cat` / `--zip-prefix 3` (a `kind_overrides` hook in `Tokenizer.fit`). Eval on a
+capped subsample (base rate **4.65%** — higher than the headline 1.9%, so PR-AUC here is only
+comparable *across these three rows*, not to other experiments).
+
+| arm | params | ROC-AUC | PR-AUC | R@P0.5 | R@P0.9 |
+|-----|--------|---------|--------|--------|--------|
+| baseline (mname+zip hashed) | 2.90M | 0.9529 | 0.7566 | 0.814 | 0.444 |
+| (a) merchant_name unhashed (cat, 92k) | 19.96M | 0.9504 | **0.6553** | 0.769 | **0.083** |
+| (b) zip → 3-digit regional prefix | **2.28M** | 0.9547 | **0.7697** | 0.820 | **0.517** |
+
+**Result — geo helps (and is cheaper); naive identity hurts:**
+- **(b) regional geo: +0.013 PR-AUC (+1.7%), +0.073 R@P0.5-9 (R@P0.9 +16%), with *fewer* params**
+  (2.28M < 2.90M, since 849 cats < 4,098 hash buckets). Not a capacity gain — it's real representational
+  signal from grouping nearby zips into learnable regions, and it concentrates at **high precision**
+  (where fraud ops operate). Note: this is *categorical* embedding of the prefix (regional grouping),
+  **not** distance-aware — the ordinal/lat-lon structure is still unexploited, so it's a **lower bound**
+  on the geo lever.
+- **(a) unhashing merchant_name: −0.10 PR-AUC (−13%), R@P0.9 collapses 0.44→0.08**, despite 7× params.
+  The 92k embeddings are under-trained (rare merchants → noise), the 92k-way MLM reconstruction head is a
+  near-impossible task that diverts the backbone, and hashing was acting as a useful regularizer. So
+  *naive* identity encoding of a high-card ID field is **net-negative** at this scale/budget. (TabFormer's
+  merchant_name is an obfuscated integer ID — no text/semantics to exploit; only identity, which needs a
+  smarter recipe: identity *input* embedding but dropped from the MLM target, or sampled/hierarchical
+  softmax.)
+
+**Takeaway:** replacing random hashing of geographic fields with **region-preserving encodings** is a
+cheap, principled win; blindly un-hashing a high-card ID field backfires. Best next step for geography is
+true **lat/lon (Fourier/Sphere2Vec)** encoding of zip+city (needs an offline geocoding table).
+
+**Caveats:** single-seed (the +0.013 PR-AUC is within a seed's noise, but the R@P0.9 jump + lower params
+make the direction credible); capped-eval base rate 4.65%; (b) is coarse regional geo, not distance-aware;
+(a)'s 92k table is under-trained so its number is a floor. Artifacts: `data/processed_{mnamecat,zipgeo}/`,
+`eval_nano_bucket_dt_{mnamecat,zipgeo}_swasof.json`.
+
+---
+
 ## Engineering notes
 
 - **Timing (M4 Max, MPS):** nano ≈ 0.48 s/step (~13 min/epoch); small ≈ 2.97 s/step
