@@ -16,3 +16,6 @@ dist/
 
 # os / editor
 .DS_Store
+
+# published as a release asset (see scripts/fetch_weights.py)
+artifacts/lgbm_model.txt

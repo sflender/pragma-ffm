@@ -77,6 +77,66 @@ python -m pragma.train.probe --ckpt artifacts/pretrain_nano.pt
 python -m pragma.eval.compare
 ```
 
+## Pretrained models & reproduction
+
+The trained weights are published as **GitHub release assets** (tag `v0.1`) — they're too
+large for git (see `.gitignore`). Tokenizers (`artifacts/tokenizer*.json`) and result JSONs
+are committed to the repo, so you only need to fetch the weights.
+
+**Release contents (`v0.1`):**
+
+| asset | what it is |
+|-------|------------|
+| `pretrain_nano_bucket_dt.pt` | nano FFM (2.9M), MLM-pretrained, bucket + Δt |
+| `pretrain_mini_bucket_dt.pt` | mini FFM (7.5M) |
+| `pretrain_small_bucket_dt_6k.pt` | small FFM (13.7M), 6k steps — the headline model |
+| `lgbm_model.txt` | LightGBM baseline booster (native format) |
+
+Each `.pt` embeds its own `model_cfg`/`preset`/`step`. The matching tokenizer is
+`artifacts/tokenizer_dt.json` (already in the repo).
+
+**A. Reproduce evals from the published weights (fast — no pretraining):**
+
+```bash
+pip install -e .
+python scripts/fetch_weights.py                 # pulls the 3 FFMs + lgbm_model.txt into artifacts/
+
+# you still need the (large, regenerable) dataset — see step B1–B2 below, then:
+python -m pragma.train.asof_probe --ckpt artifacts/pretrain_small_bucket_dt_6k.pt \
+    --data-dir data/processed_dt --tokenizer artifacts/tokenizer_dt.json
+python scripts/lgbm_subsample.py                 # LightGBM baseline on the same subsample
+python scripts/make_figures.py                   # regenerate figures/fig1..7
+```
+
+Load a checkpoint in code:
+
+```python
+from pragma.model.tokenizer import Tokenizer
+from pragma.train.probe import load_backbone
+from pragma.utils import get_device
+tok = Tokenizer.load("artifacts/tokenizer_dt.json")
+model, preset, cfg = load_backbone("artifacts/pretrain_small_bucket_dt_6k.pt", tok, get_device("auto"))
+# model.record_embeddings(codes, times, mask, amount, causal=False) -> per-event embeddings
+```
+
+**B. Reproduce end-to-end from scratch** (the data is *not* redistributed — regenerate it):
+
+```bash
+# B1. download IBM TabFormer (Apache-2.0) via git-lfs ->
+#     data/raw/TabFormer/data/credit_card/card_transaction.v1.csv
+# B2. parse -> parquet + per-(user,card) split, then fit tokenizer + pre-encode
+python -m pragma.data.parse --split-mode seq
+python -m pragma.data.encode --include-dt            # writes data/processed_dt/
+# B3. pretrain (small = 6k steps ~2h on M4 Max; nano/mini = 3k)
+python -m pragma.train.pretrain --preset small --numeric-mode bucket --max-steps 6000 \
+    --data-dir data/processed_dt --tokenizer artifacts/tokenizer_dt.json --tag _dt_6k
+# B4. eval + baseline + figures  (as in A)
+```
+
+Reproducing the exact published weights bit-for-bit isn't guaranteed (MPS nondeterminism),
+but the metrics reproduce within seed noise. See **EXPERIMENTS.md** for every experiment's
+exact command.
+
 ## Environment
 M4 Max / 64GB / macOS; miniconda `base` with torch 2.12 (MPS). Throughput (MPS):
 nano ≈ 0.48 s/step (~13 min/epoch), small ≈ 2.97 s/step (~60 min/epoch).
@@ -86,35 +146,33 @@ nano ≈ 0.48 s/step (~13 min/epoch), small ≈ 2.97 s/step (~60 min/epoch).
 See **[EXPERIMENTS.md](EXPERIMENTS.md)** for the full lab notebook (hypotheses, per-experiment
 setups, caveats, and repro commands). Summary below.
 
-**Headline (per-sequence split, test set = 2.28M transactions, 2,928 frauds):**
+> **Note on eval methodology (E10).** The headline numbers below use the **corrected
+> as-of-date evaluation** (method a): for each target transaction we run the backbone
+> bidirectionally over a window *ending at* that transaction and read the last-position
+> embedding — the PRAGMA-faithful scheme. Earlier revisions of this README reported an
+> older tiling eval on the full test set; those absolute numbers are superseded. **PR-AUC
+> here is on a stratified eval subsample (~1.9% base rate), so treat PR-AUC as a
+> *relative* metric across arms and ROC-AUC (base-rate-invariant) as the absolute one.**
 
-| arm | ROC-AUC | PR-AUC | Recall@Prec0.5 |
-|-----|---------|--------|----------------|
-| LightGBM (causal features) | 0.940 | 0.043 | 0.000 |
-| PRAGMA-nano probe, bidirectional | 0.946 | 0.242 | 0.118 |
-| **PRAGMA-nano probe, as-of-date (causal, no future)** | **0.944** | **0.215** | **0.092** |
+**Headline (per-sequence split, as-of-date eval, ~1.9% base-rate subsample):**
 
-Even a tiny 2.9M-param backbone, pretrained only with MLM and then **frozen** (just a
-linear probe on top), **beats the strong LightGBM incumbent by ~5× on PR-AUC** and
-achieves nonzero recall at 50% precision where LightGBM gets zero. This reproduces the
-paper's central claim at laptop scale.
+| arm | PR-AUC | vs LightGBM |
+|-----|--------|-------------|
+| LightGBM (causal engineered features) | 0.369 | — |
+| PRAGMA **nano** (2.9M) probe | 0.643 | **+74%** |
+| PRAGMA **mini** (7.5M) probe | 0.695 | +88% |
+| PRAGMA **small** (13.7M) probe | **0.786** | **+113%** |
 
-**Leakage control (the important bit):** PRAGMA is a bidirectional encoder, so a naive
-per-window embedding of a transaction sees *future* transactions in the same window —
-optimistic for a causal task like fraud. We fixed this to match the paper's "history
-truncated at the evaluation point" framing via **as-of-date scoring**: each transaction's
-embedding uses only past + itself (causal attention mask). This dropped PR-AUC just
-0.242 → 0.215 (~11%), so **the win is real representation quality, not future-peeking**:
-0.215 vs LightGBM's 0.043 is still **+396%**, squarely in the spirit of the paper's
-reported PR-AUC lifts.
+A frozen, MLM-pretrained backbone with only a **linear probe** on top beats the strong
+LightGBM incumbent by **+74% (nano) to +113% (small)** on PR-AUC, and **scales cleanly**
+with model size (0.643 → 0.695 → 0.786). This reproduces the paper's central claim at
+laptop scale. Ablations (`figures/fig5_ablations.png`): **RoPE is load-bearing** (−7.2
+PR-AUC points); Δt (−0.6) and the field embedding (~0) are near-neutral (redundant given
+RoPE / the value-id offsets). See EXPERIMENTS.md E1–E11.
 
-Note on absolute PR-AUC: it looks small because it is anchored to the 0.13% base rate
-(random ≈ 0.0013). 0.215 is ~167× better than chance.
-
-**Other notes:**
-- TabFormer fraud is **largely a static function** of a few fields (online flag, error
-  codes, MCC, amount): LightGBM reaches ROC-AUC 0.94 with essentially one deep tree.
-- Temporal split is shift-confounded (LightGBM 0.94 → 0.79); we headline the seq split.
+**Caveats (read before citing):** single **synthetic** dataset with rule-injected fraud
+(likely more learnable than real fraud; simulated span **1991–2020**); mostly **single-seed**
+(MLM-loss seed variance ~0.2 — small deltas are noise); PR-AUC on a subsample as noted.
 
 ### Numeric-encoding A/B (bucket vs PLE vs periodic)
 

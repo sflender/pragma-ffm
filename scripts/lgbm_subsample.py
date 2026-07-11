@@ -31,6 +31,8 @@ params = dict(objective="binary", metric="auc", learning_rate=0.05, num_leaves=1
               bagging_freq=1, scale_pos_weight=spw, seed=0, verbosity=-1)
 model = lgb.train(params, dtrain, 800, valid_sets=[dval],
                   callbacks=[lgb.early_stopping(80, verbose=False)])
+model.save_model("artifacts/lgbm_model.txt", num_iteration=model.best_iteration)
+print(f"saved artifacts/lgbm_model.txt (best_iteration={model.best_iteration})")
 
 te_global = np.where(te)[0]                                   # sorted global indices of test rows
 scores_te = model.predict(X[te], num_iteration=model.best_iteration)

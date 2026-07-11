@@ -28,6 +28,7 @@ CKPTS = {
     "mini":  "pretrain_mini_bucket_dt.pt",
     "small": "pretrain_small_bucket_dt_6k.pt",
 }
+EXTRA = ["lgbm_model.txt"]              # LightGBM baseline booster (always fetched)
 ART = Path("artifacts")
 
 
@@ -56,6 +57,14 @@ def main():
             continue
         print(f"fetching {n} <- {BASE}/{fname}")
         _download(f"{BASE}/{fname}", dest)
+    if not args.only:                              # baseline booster comes with the full pull
+        for fname in EXTRA:
+            dest = ART / fname
+            if dest.exists() and not args.force:
+                print(f"  {fname}: present, skipping")
+                continue
+            print(f"fetching {fname} <- {BASE}/{fname}")
+            _download(f"{BASE}/{fname}", dest)
     print(f"done -> {ART}/ (tokenizers are already in the repo: artifacts/tokenizer*.json)")
 
 
