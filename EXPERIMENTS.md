@@ -514,6 +514,89 @@ true **lat/lon (Fourier/Sphere2Vec)** encoding of zip+city (needs an offline geo
 make the direction credible); capped-eval base rate 4.65%; (b) is coarse regional geo, not distance-aware;
 (a)'s 92k table is under-trained so its number is a floor. Artifacts: `data/processed_{mnamecat,zipgeo}/`,
 `eval_nano_bucket_dt_{mnamecat,zipgeo}_swasof.json`.
+---
+
+## E13 — Relational (cross-entity) signal: where to inject it — probe vs backbone
+
+**Question:** PRAGMA encodes one `(user,card)` sequence at a time and is structurally blind
+to **cross-entity** patterns (a merchant's recent activity across *all* cards). Does adding
+causal **merchant** signal help fraud, and — the real question — does baking it into the
+backbone as **cross-attention** beat just bolting the features onto the probe? (Full design
+writeup: `RELATIONAL_PRAGMA.md`.)
+
+### E13a — Relational features, complementarity (handcrafted, local)
+
+Causal per-merchant features (prior txn count, prior fraud rate, prior mean amount,
+card–merchant novelty), leakage-safe (strictly as-of-date), LightGBM in the probe's fit
+regime. Standalone the merchant **prior fraud rate** carries real signal (ROC 0.847 / PR
+0.314) — but it is *label-derived*. Complementarity on top of a strong within-sequence model:
+
+| features | PR-AUC | ROC-AUC |
+|---|---|---|
+| within-sequence only | 0.881 | 0.991 |
+| relational only | 0.356 | 0.923 |
+| **within-sequence + relational** | **0.920** | 0.994 |
+
+→ **+0.038 PR-AUC** from signal a per-sequence encoder cannot access. Real, but driven by the
+label-based feature (see caveats + `RELATIONAL_PRAGMA §6`).
+
+### E13b — Architectural test: entity-memory cross-attention vs the duct-tape
+
+**Setup:** one controlled GPU run (RunPod **L40S**, bf16), `small`, bucket + Δt, **8000
+steps**, batch 256, lr 4.24e-4, L=128, method-(a) probe on the standard stratified subsample
+(n=152,928, base 1.9%). Two backbones trained **identically** — the *only* variable is where
+the 5-dim causal merchant memory (`merchant_mem.npz`) enters:
+- **ARM A (no-mem):** plain backbone → then features injected at the **supervised probe**
+  (duct-tape concat), logreg and LightGBM heads (`scripts/fusion_probe.py`).
+- **ARM B (memory-CSA):** merchant memory cross-attended by the History Encoder, trained
+  end-to-end under the **same MLM objective**, read out by the **frozen linear probe**
+  (`--mem`; `MemoryCrossAttention`).
+
+| arm | where relational signal enters | probe head | PR-AUC | ROC-AUC | R@P0.5 | R@P0.9 |
+|-----|-------------------------------|-----------|--------|---------|--------|--------|
+| embedding-only (no-mem) | — | linear | 0.747 | 0.980 | — | — |
+| **memory-CSA** (backbone, MLM) | **backbone** | linear | **0.694** | 0.975 | 0.758 | 0.312 |
+| duct-tape fusion | **probe** (supervised) | logreg | 0.786 | 0.984 | — | — |
+| duct-tape fusion | **probe** (supervised) | LightGBM | **0.844** | 0.988 | — | — |
+
+**Interpretation — the elegant architecture LOST, and fell *below* baseline (−0.053).**
+Injecting relational signal into the MLM-pretrained backbone *hurt*; injecting the same
+features at the supervised probe won by +0.09 (logreg) to +0.15 (LightGBM). **Where you
+inject matters more than how elegant the injection is:**
+1. **Objective mismatch (the mechanism).** The backbone trains on **MLM** (token
+   reconstruction). The strongest relational feature — merchant prior fraud rate — is
+   *label-derived* and useless for reconstructing masked tokens, so MLM gives **no gradient**
+   to preserve it; the cross-attention pathway optimises for reconstruction, not fraud.
+2. **Frozen-backbone bottleneck.** Any captured signal must survive as a *linearly-readable*
+   direction in the frozen embedding — lossy vs handing the raw feature to the probe.
+3. **Cost without benefit.** +38k params / a new route on the same step budget, mildly
+   perturbing the representation with nothing to compensate.
+
+This answers a standing open question ("does relational signal help the *linear-probe*
+readout, or need fine-tuning?") for the pretraining-injection route: **under a frozen backbone
++ MLM, no — inject downstream.**
+
+**Caveats — not yet a settled negative.**
+1. **Absolute numbers ≠ the canonical baseline.** This run's config (8k / batch 256 / bf16 /
+   sqrt-scaled lr) differs from E10's canonical small (6k / batch 128 / fp32 → 0.786), so
+   embedding-only reads **0.747** here. The *within-run* comparison is valid (all four arms
+   share this exact backbone); the cross-run absolute is not — don't cite 0.747 as "the" small
+   number.
+2. **Single seed**, one dataset. The Δ(memory-CSA − baseline) = −0.053 clears probe noise
+   (±0.005) but not necessarily *training-seed* noise (±~0.05 at nano; smaller at small but
+   unmeasured here).
+3. **Untested rescues:** longer pretraining; a **relational auxiliary objective**
+   (masked-entity-context / contrastive co-occurrence, `RELATIONAL_PRAGMA §4`) so MLM *rewards*
+   the memory; light fine-tuning of the mem pathway; a dataset with **real label-free**
+   relational fraud (TabFormer fraud is rule-injected per-user → thin cross-entity structure,
+   so this **understates** the real-world upside).
+
+**Repro:**
+`python scripts/build_merchant_memory.py --parquet data/processed/transactions.parquet --data-dir data/processed_dt`
+then ARM A: `pretrain --preset small --numeric-mode bucket --data-dir data/processed_dt --tokenizer artifacts/tokenizer_dt.json --max-steps 8000 --batch-size 256 --lr 4.24e-4 --dtype bf16 --tag _A`
+→ `python scripts/fusion_probe.py --ckpt artifacts/pretrain_small_bucket_A.pt --data-dir data/processed_dt --tokenizer artifacts/tokenizer_dt.json --parquet data/processed/transactions.parquet`;
+ARM B: add `--mem --tag _B` to pretrain → `python -m pragma.train.asof_probe --ckpt artifacts/pretrain_small_bucket_B.pt --data-dir data/processed_dt --tokenizer artifacts/tokenizer_dt.json`.
+Full metrics: `artifacts/relational_8k_results.json`. Feature flag: `use_mem` (default off).
 
 ---
 
@@ -544,6 +627,13 @@ make the direction credible); capped-eval base rate 4.65%; (b) is coarse regiona
 - [x] Field-embedding ablation (E11): **neutral** — redundant given the value-table offsets, no
   real effect on PR-AUC or MLM loss (an apparent MLM "drop" was seed noise; MLM-loss seed variance
   ~0.2). Won't generalize to heterogeneous/sparse-schema FFMs.
+- [x] Relational / cross-entity signal (E13): merchant features add **+0.038** on a strong
+  within-seq model (E13a); but **architectural** entity-memory cross-attention **lost to** the
+  duct-tape probe fusion and fell below baseline (E13b) — inject relational signal at the
+  *supervised probe*, not the *MLM backbone*.
+- [ ] Relational rematch: pretrain memory-CSA with a **relational auxiliary objective** (so MLM
+  rewards the memory) and/or light-finetune the mem pathway; re-test on data with real label-free
+  relational fraud. The E13b negative may not survive these.
 - [ ] Untuned defaults worth a cheap sweep: amount buckets (16/64/256), hash size (4096 →
   16k/32k, esp. merchant_name which collides ~24 merchants/bucket), merchant_city semantic/geo
   embedding (real text currently hashed away).
