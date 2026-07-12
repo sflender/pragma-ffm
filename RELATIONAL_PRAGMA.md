@@ -182,6 +182,56 @@ IBM TabFormer fraud is **rule-injected and largely per-user (synthetic)**, so it
 dataset with genuine cross-entity fraud (fraud rings, compromised merchants) — e.g., the
 kind of proprietary corpus PRAGMA was actually trained on.
 
+## 7.1. Discussion — the proxy-alignment gap (why §6.1 failed, and when it wouldn't)
+
+The §6.1 result is easy to mis-read as "cross-attention doesn't help." It isn't. In that run
+we **handed the backbone the merchant memory as an input** — the relational signal, including
+the strongest label-based feature, was *literally available at every layer*. It was still
+discarded. The reason is the pretraining **objective**, not the architecture or the
+information budget:
+
+> **Proxy-alignment gap.** Self-supervised pretraining preserves exactly the features its
+> *proxy* objective rewards, and discards task-relevant features the proxy doesn't need —
+> **even when they are available as inputs.**
+
+MLM-over-fields rewards whatever helps reconstruct a masked `(field, value)` token. A
+merchant's global fraud rate does *nothing* for that reconstruction, so no gradient ever asks
+the cross-attention pathway to represent it; the frozen linear probe then cannot recover what
+the backbone had no pressure to keep. The duct-tape wins because it injects the same feature
+at the **supervised** head, where the *task* objective does the rewarding directly.
+
+**This is the general FFM tension, made concrete.** Foundation models transfer when their SSL
+proxy is a good stand-in for a broad family of downstream tasks. Next-token prediction is a
+freakishly universal proxy — predicting the next token well ends up *requiring* syntax, world
+knowledge, arithmetic. MLM-over-fields is a **good** proxy for within-event / within-sequence
+structure and a **poor** proxy for **cross-entity aggregates**: reconstructing a masked field
+never forces you to model what a merchant is doing across other cards. Relational fraud signal
+lives precisely in the gap between the proxy and the task.
+
+**The two escape hatches follow directly:**
+1. **Make the relational structure reconstruction-relevant** — a masked-entity / next-entity
+   objective (§4), so predicting the masked token *requires* modeling the merchant's recent
+   regime. Then MLM has a reason to preserve the memory, and cross-attention (B) can pay off.
+2. **Inject at the supervised head** — the duct-tape (A), which already works.
+
+**When would (B) work without hatch #1? — the real-vs-synthetic coupling.** This is the
+mechanism behind §7's caveat. On TabFormer, merchant fraud-rate is near-pure label leakage
+with **no reconstruction correlate**: fraud is rule-injected *per user*, so a "risky"
+merchant's transactions are not statistically distinctive — MLM is *maximally* blind to it,
+and (B) is worst-case here. On **real** payments data a compromised merchant genuinely shifts
+the transaction distribution (amounts, timing, decline codes, velocity), so reconstructing a
+masked field **would** benefit from modeling the merchant's recent regime — MLM then has
+organic pressure to preserve relational state, and (B) could succeed with **no** bolt-on
+objective. So the §6.1 negative is **partly an artifact of synthetic data's thin coupling**
+between relational structure and the reconstruction distribution — not evidence that
+architectural relational modeling is futile.
+
+**Takeaway.** *Pretraining preserves what its proxy rewards; relational signal must therefore
+be made reconstruction-relevant (hatch #1) or injected downstream (hatch #2) — and how
+reconstruction-relevant it is depends on whether the data's relational structure is genuine or
+injected.* That single sentence connects the E12b result, the design space (§3), the SSL
+objectives (§4), and the data caveat (§7).
+
 ## 8. Roadmap
 
 1. **(A)** Relational features → probe/baseline; measure lift. ✅ *done — +0.04 (logreg) / +0.10 (LGBM) PR-AUC; §6, §6.1.*
