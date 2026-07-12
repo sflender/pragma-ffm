@@ -24,6 +24,9 @@ class TokenizerConfig:
     n_dt_buckets: int = 20              # #log-spaced buckets for dt
     dt_min_s: float = 1.0               # smallest dt boundary (seconds)
     dt_max_s: float = 31_536_000.0      # largest dt boundary (~1 year, seconds)
+    # --- high-cardinality field encoding (E12) ---
+    zip_prefix: Optional[int] = 3       # default: encode zip as its 3-digit regional prefix (cat)
+    mname_cat: bool = False             # encode merchant_name as full identity vocab (ablation; hurts)
 
     def to_dict(self) -> dict:
         return asdict(self)

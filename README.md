@@ -41,9 +41,14 @@ canonical home). Regenerating it is deterministic, so you get byte-identical arr
 2. **Regenerate the processed arrays** (the Δt variant used for the headline models):
    ```bash
    python -m pragma.data.parse  --split-mode seq          # -> data/processed/ ; seed=0
-   python -m pragma.data.encode --include-dt \
+   python -m pragma.data.encode --include-dt --zip-prefix 0 \
        --out-dir data/processed_dt --tokenizer artifacts/tokenizer_dt.json
    ```
+   > **Note (E12):** the *default* zip encoding is now the region-preserving **3-digit prefix**
+   > (`TokenizerConfig.zip_prefix=3`). The **v0.1 release checkpoints were trained on the older
+   > *hashed* zip encoding**, so reproducing them byte-for-byte requires **`--zip-prefix 0`** (as
+   > above, which disables the prefix and restores hashing). New training runs (omit the flag) use
+   > the improved prefix encoding.
 
 **Why this reproduces exactly:** the train/val/test assignment is a seeded permutation of
 the 6,139 `(user,card)` sequences (`np.random.default_rng(seed=0)` in `parse.py`), and the
@@ -148,8 +153,8 @@ model, preset, cfg = load_backbone("artifacts/pretrain_small_bucket_dt_6k.pt", t
 #     data/raw/TabFormer/data/credit_card/card_transaction.v1.csv   (see "Getting the data")
 # B2. parse -> parquet + deterministic per-(user,card) split, then fit tokenizer + encode
 python -m pragma.data.parse  --split-mode seq
-python -m pragma.data.encode --include-dt --out-dir data/processed_dt \
-    --tokenizer artifacts/tokenizer_dt.json          # -> data/processed_dt/
+python -m pragma.data.encode --include-dt --zip-prefix 0 --out-dir data/processed_dt \
+    --tokenizer artifacts/tokenizer_dt.json          # -> data/processed_dt/ (--zip-prefix 0 = v0.1 hashed zip)
 # B3. pretrain (small = 6k steps ~2h on M4 Max; nano/mini = 3k)
 python -m pragma.train.pretrain --preset small --numeric-mode bucket --max-steps 6000 \
     --data-dir data/processed_dt --tokenizer artifacts/tokenizer_dt.json --tag _dt_6k

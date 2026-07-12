@@ -90,9 +90,9 @@ def main() -> None:
     ap.add_argument("--include-dt", action="store_true",
                     help="add a log-bucketed time-since-last-event field")
     ap.add_argument("--n-dt-buckets", type=int, default=tc.n_dt_buckets)
-    ap.add_argument("--mname-cat", action="store_true",
+    ap.add_argument("--mname-cat", action="store_true", default=tc.mname_cat,
                     help="(experiment a) encode merchant_name as a full identity vocab, not hashed")
-    ap.add_argument("--zip-prefix", type=int, default=None,
+    ap.add_argument("--zip-prefix", type=int, default=tc.zip_prefix,
                     help="(experiment b) replace zip with its N-digit regional prefix, as a cat")
     args = ap.parse_args()
     build(args.parquet, args.out_dir, args.tokenizer, args.amount_buckets, args.hash_buckets,
