@@ -51,7 +51,8 @@ def embed(model, ds, device, batch_size):
     embs, labs = [], []
     for b in DataLoader(ds, batch_size=batch_size):
         b = to_device(b, device)
-        r = model.record_embeddings(b["codes"], b["times"], b["mask"], b["amount"], causal=False)
+        r = model.record_embeddings(b["codes"], b["times"], b["mask"], b["amount"],
+                                    causal=False, mem=b.get("mem"))
         embs.append(r[:, -1].float().cpu().numpy())
         labs.append(b["label"].cpu().numpy())
     return np.concatenate(embs), np.concatenate(labs)

@@ -55,6 +55,11 @@ class ModelConfig:
     # --- event encoder: learned per-field identity embedding (ablatable) ---
     use_field_emb: bool = True          # add field-identity vector to each token in EventEncoder
 
+    # --- relational merchant memory (cross-sequence): record embeddings cross-attend to a
+    # per-event, causal, cross-card merchant summary. Off = vanilla per-sequence model. ---
+    use_mem: bool = False
+    d_mem: int = 5                      # dims of the precomputed merchant-memory vector
+
     # --- rope ---
     rope_theta: float = 10000.0
     # time is measured in *days* since sequence start; scaled before RoPE.

@@ -41,7 +41,7 @@ def mlm_step(model: MiniPragma, batch: dict, tcfg):
     codes, times, mask = batch["codes"], batch["times"], batch["mask"]
     masked, targets = apply_mlm_mask(
         codes, mask, tcfg.mask_token_prob, tcfg.mask_event_prob, tcfg.mask_field_prob)
-    logits = model.mlm_logits(masked, times, mask, batch.get("amount"))
+    logits = model.mlm_logits(masked, times, mask, batch.get("amount"), mem=batch.get("mem"))
     loss, ntok = mlm_loss(logits, targets)
     n_real = int(mask.sum().item()) * model.tok.F
     return loss, ntok, n_real
@@ -66,9 +66,10 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
           seed: int | None = None, use_field_emb: bool = True,
           stride: int | None = None,
           batch_size: int | None = None, lr: float | None = None,
-          num_workers: int = 0, dtype: str | None = None) -> Path:
+          num_workers: int = 0, dtype: str | None = None, use_mem: bool = False) -> Path:
     preset = get_preset(preset_name)
     tcfg = preset.train
+    preset.model.use_mem = use_mem
     if max_steps is not None:
         tcfg.max_steps = max_steps
     if numeric_mode is not None:
@@ -169,12 +170,14 @@ def main() -> None:
     ap.add_argument("--num-workers", type=int, default=0, help="DataLoader worker processes")
     ap.add_argument("--dtype", choices=["fp32", "bf16"], default=None,
                     help="bf16 enables CUDA autocast (faster + less memory)")
+    ap.add_argument("--mem", action="store_true",
+                    help="enable relational merchant-memory cross-attention (needs merchant_mem.npz)")
     args = ap.parse_args()
     train(args.preset, args.data_dir, args.tokenizer, args.out_dir, args.device,
           args.max_steps, args.numeric_mode, args.tag, args.max_seq_len,
           args.pos_mode, args.seed, use_field_emb=not args.no_field_emb, stride=args.stride,
           batch_size=args.batch_size, lr=args.lr, num_workers=args.num_workers,
-          dtype=args.dtype)
+          dtype=args.dtype, use_mem=args.mem)
 
 
 if __name__ == "__main__":
