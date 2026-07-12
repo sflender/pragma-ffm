@@ -46,7 +46,7 @@ card–merchant novelty. Concatenate to the frozen record embedding before the l
 This quantifies the ceiling of hand-built relational signal and is the honest baseline any
 learned approach must beat.
 
-### B. Entity-memory cross-attention *(the recommended first *model*)*
+### B. Entity-memory cross-attention *(implemented + tested — surprisingly **lost** to A; see §6.1)*
 Keep the event/history encoders, but give each event access to a **merchant memory**: a
 learned embedding summarising that merchant's *recent global* activity across **all** cards,
 as of the event's timestamp. Concretely:
@@ -127,6 +127,53 @@ a per-sequence encoder structurally cannot access. **Validated.**
    regime), so they run higher than the blog's full-data-fit LightGBM (0.369); the valid
    takeaway is the **+0.038 relative lift**, not the absolute values.
 
+## 6.1. Approach B tested on GPU: entity-memory cross-attention *loses to the duct-tape*
+
+We implemented **Approach B** (§3B) as a `MemoryCrossAttention` module: a per-event causal
+5-dim merchant memory (`merchant_mem.npz`) is projected to `d_model` and cross-attended by the
+History Encoder output, trained end-to-end under the **same MLM objective**, then read out by
+the **same frozen linear probe**. Head-to-head against the duct-tape fusion (§3A) on one
+controlled GPU run — identical data / split / tokenizer / **8k steps** / batch / LR — so the
+only variable is *where the relational signal enters*:
+
+| arm | where relational signal enters | probe head | PR-AUC | ROC-AUC |
+|---|---|---|---|---|
+| embedding-only (no-mem backbone) | — | linear | 0.747 | 0.980 |
+| **memory-CSA** (Approach B) | **backbone** (MLM-pretrained) | linear | **0.694** | 0.975 |
+| duct-tape fusion (Approach A) | **probe** (supervised) | logreg | 0.786 | 0.984 |
+| duct-tape fusion (Approach A) | **probe** (supervised) | LightGBM | **0.844** | 0.988 |
+
+→ **The architectural memory solution not only lost to the duct-tape — it fell *below* the
+plain no-mem baseline (−0.053 PR-AUC).** The duct-tape concat beat it by +0.09 (logreg) to
++0.15 (LightGBM). Injecting relational signal into the backbone *hurt*.
+
+**Why (the actual finding).** *Where* you inject relational signal matters more than how
+elegant the injection is:
+1. **Objective mismatch.** The backbone trains on **MLM** (self-supervised token
+   reconstruction). The strongest relational feature — the merchant's prior fraud rate — is
+   **label-derived** and useless for reconstructing masked tokens, so MLM gives the backbone
+   **no gradient signal** to preserve it. The cross-attention pathway optimises for
+   reconstruction, not fraud. The duct-tape injects the same features at the **supervised**
+   probe, where they directly serve the fraud objective.
+2. **Frozen-backbone bottleneck.** Any captured signal must survive as a *linearly-readable
+   direction* in the frozen last-position embedding — lossy versus handing the raw feature to
+   the probe.
+3. **Cost without benefit.** The mem pathway added a module (+38k params, a new route) on the
+   *same* step budget, mildly perturbing the representation with nothing to compensate.
+
+**Takeaway that reframes this direction:** self-supervised pretraining **cannot see the
+fraud label**, so relational signal that only pays off downstream should be injected
+**downstream** (Approach A), not baked architecturally into the SSL backbone. This answers
+§9's open question ("does relational signal help the linear-probe readout, or need
+fine-tuning?") for the *pretraining-injection* route: under a frozen backbone + MLM, no.
+
+**Caveats — not yet a settled negative.** This is 8k steps with the mem pathway frozen at
+probe time. Untested rescues: (i) much longer pretraining; (ii) a **relational auxiliary
+objective** during pretraining (§4 masked-entity-context / contrastive co-occurrence) so MLM
+*does* reward using the memory; (iii) light fine-tuning of the mem pathway on the fraud task;
+(iv) a dataset with real label-free relational fraud (§7), where the memory would carry
+reconstruction-relevant structure. The clean result stands: **elegance ≠ signal placement.**
+
 ## 7. Data caveat (important)
 
 IBM TabFormer fraud is **rule-injected and largely per-user (synthetic)**, so its
@@ -137,8 +184,10 @@ kind of proprietary corpus PRAGMA was actually trained on.
 
 ## 8. Roadmap
 
-1. **(A)** Relational features → probe/baseline; measure lift. *(this repo can start today)*
+1. **(A)** Relational features → probe/baseline; measure lift. ✅ *done — +0.04 (logreg) / +0.10 (LGBM) PR-AUC; §6, §6.1.*
 2. **(B)** Entity-memory cross-attention; pretrain with MLM + masked-entity-context; probe.
+   ✅ *implemented + tested (MLM-only) — **lost to (A)**, fell below baseline; §6.1. Next: add
+   a relational SSL objective (§4) so MLM rewards the memory, then re-test.*
 3. **(C)** Temporal GNN; compare ceiling.
 4. Scale entities (counterparty graph), add relational SSL objectives, test on a dataset
    with real relational fraud.
