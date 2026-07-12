@@ -93,15 +93,39 @@ All objectives are **causal / as-of-date** to preserve the leakage-safe framing.
 
 ## 6. Empirical seed (this repo)
 
-See `scripts`-style experiment `relational_probe.py`: causal merchant-level features on the
-IBM TabFormer test subsample.
+Causal merchant-level features on the IBM TabFormer test subsample (n=152,928, base 0.0191),
+LightGBM fit on the matched train subsample (same regime as the FFM probe).
 
-> **Result placeholder** — filled from the run:
-> - standalone merchant features' ROC/PR-AUC,
-> - within-sequence LightGBM PR-AUC vs +relational (the lift).
+**Standalone signal (test subsample):**
 
-If even simple merchant aggregates lift PR-AUC over a within-sequence model, the relational
-direction is validated cheaply — before building B/C.
+| feature | ROC-AUC | PR-AUC | note |
+|---|---|---|---|
+| `m_prior_fraud_rate` (merchant's past fraud rate) | 0.847 | 0.314 | **strong** — but *uses past labels* |
+| `m_pop` (merchant popularity, log prior txns) | 0.373 | 0.014 | label-free, weak (inverted: popular ⇒ less fraud) |
+| `cm_new` (first time this card @ this merchant) | 0.536 | 0.029 | label-free, weak |
+
+**Complementarity (LightGBM, same fit regime):**
+
+| features | PR-AUC | ROC-AUC |
+|---|---|---|
+| within-sequence only | 0.881 | 0.991 |
+| relational only | 0.356 | 0.923 |
+| **within-sequence + relational** | **0.920** | 0.994 |
+
+→ **Relational features add +0.038 PR-AUC** on top of a strong within-sequence model — signal
+a per-sequence encoder structurally cannot access. **Validated.**
+
+**Honest caveats.**
+1. The lift is driven by `m_prior_fraud_rate`, which is **label-based** (past fraud at the
+   merchant). It's causal, but in production fraud labels arrive with weeks of delay, so
+   real-time availability is weaker; a faithful version needs label-delay simulation.
+2. The **label-free** relational features (velocity/novelty) are weak *here* — consistent
+   with TabFormer's fraud being rule-injected **per-user**, so its label-free relational
+   structure is thin. Real fraud (rings, compromised merchants) carries strong label-free
+   relational signal, so this **understates** the real-world upside (see §7).
+3. These LightGBM numbers are fit on the balanced train subsample (to match the FFM probe's
+   regime), so they run higher than the blog's full-data-fit LightGBM (0.369); the valid
+   takeaway is the **+0.038 relative lift**, not the absolute values.
 
 ## 7. Data caveat (important)
 
