@@ -1,0 +1,15 @@
+{
+  "dataset": "ieee_cis",
+  "ckpt": "artifacts/pretrain_nano_bucket_ieee_nano.pt",
+  "L": 96,
+  "n": 62511,
+  "base_rate": 0.029914735006638833,
+  "ffm_probe": {
+    "pr_auc": 0.08963240093166408,
+    "roc_auc": 0.7064201678908579
+  },
+  "lightgbm": {
+    "pr_auc": 0.1573977443899119,
+    "roc_auc": 0.7543511400971458
+  }
+}
