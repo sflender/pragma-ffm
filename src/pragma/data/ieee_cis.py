@@ -48,12 +48,14 @@ def _as_cat(s: pd.Series) -> pd.Series:
 
 
 def parse(raw_dir: str, out: str, train_q: float, val_q: float,
-          split_mode: str = "seq", seed: int = 0) -> None:
+          split_mode: str = "seq", seed: int = 0, seq_key: str = "card1") -> None:
     t0 = time.time()
     raw = Path(raw_dir)
-    print(f"[ieee] reading {raw}/train_transaction.csv ...")
+    print(f"[ieee] reading {raw}/train_transaction.csv ...  seq_key={seq_key}")
     keep = (["TransactionID", "isFraud", "TransactionDT", "TransactionAmt", SEQ_ENTITY]
             + TXN_CAT)
+    if seq_key == "uid":
+        keep.append("D1")     # needed to disambiguate the client (card1+addr1+D1n)
     df = pd.read_csv(raw / "train_transaction.csv", usecols=keep)
     print(f"[ieee] {len(df):,} transactions in {time.time()-t0:.1f}s")
 
@@ -70,8 +72,21 @@ def parse(raw_dir: str, out: str, train_q: float, val_q: float,
         df[c] = _as_cat(df[c])
     df[SEQ_ENTITY] = df[SEQ_ENTITY].astype("int32")
 
-    # --- sequence ids + ordering (one sequence per card1) ---
-    df["seq_id"] = df[SEQ_ENTITY].astype("category").cat.codes.astype("int32")
+    # --- sequence key (which entity defines a "sequence") ---
+    # card1: rich history but a noisy client proxy. card1_addr1: cleaner client, ~14 txns/seq.
+    # uid (card1+addr1+D1n, the Kaggle winning client id): cleanest but fragments to ~2 txns/seq
+    # (too short to sequence — kept for completeness / relational-aggregation use).
+    if seq_key == "card1":
+        key = df[SEQ_ENTITY].astype(str)
+    elif seq_key == "card1_addr1":
+        key = df[SEQ_ENTITY].astype(str) + "_" + df["addr1"].astype(str)
+    elif seq_key == "uid":
+        day = (df["TransactionDT"] // 86400).astype("int64")
+        d1n = (day - df["D1"]).where(df["D1"].notna(), -999).astype("Int64")
+        key = df[SEQ_ENTITY].astype(str) + "_" + df["addr1"].astype(str) + "_" + d1n.astype(str)
+    else:
+        raise ValueError(f"unknown seq_key {seq_key!r}")
+    df["seq_id"] = key.astype("category").cat.codes.astype("int32")
     df = df.sort_values(["seq_id", "ts", "TransactionID"], kind="stable").reset_index(drop=True)
     df["event_idx"] = df.groupby("seq_id").cumcount().astype("int32")
 
@@ -114,7 +129,7 @@ def parse(raw_dir: str, out: str, train_q: float, val_q: float,
     print(f"[ieee] wrote {out}  ({len(df):,} rows, {Path(out).stat().st_size/1e6:.0f} MB) "
           f"in {time.time()-t0:.1f}s")
 
-    meta = {"dataset": "ieee_cis", "split_mode": split_mode, "seq_entity": SEQ_ENTITY,
+    meta = {"dataset": "ieee_cis", "split_mode": split_mode, "seq_key": seq_key,
             "ref_epoch": REF_EPOCH, "n_rows": int(len(df)), "n_seqs": int(df["seq_id"].nunique()),
             "fraud_rate": float(df["is_fraud"].mean()),
             "split_counts": {k: int(v) for k, v in df["split"].value_counts().items()}}
@@ -129,8 +144,10 @@ def main() -> None:
     ap.add_argument("--val-q", type=float, default=0.90)
     ap.add_argument("--split-mode", choices=["seq", "temporal"], default="seq")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--seq-key", choices=["card1", "card1_addr1", "uid"], default="card1",
+                    help="entity that defines a sequence (client proxy)")
     args = ap.parse_args()
-    parse(args.raw_dir, args.out, args.train_q, args.val_q, args.split_mode, args.seed)
+    parse(args.raw_dir, args.out, args.train_q, args.val_q, args.split_mode, args.seed, args.seq_key)
 
 
 if __name__ == "__main__":
