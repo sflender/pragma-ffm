@@ -229,7 +229,7 @@ architectural relational modeling is futile.
 **Takeaway.** *Pretraining preserves what its proxy rewards; relational signal must therefore
 be made reconstruction-relevant (hatch #1) or injected downstream (hatch #2) — and how
 reconstruction-relevant it is depends on whether the data's relational structure is genuine or
-injected.* That single sentence connects the E12b result, the design space (§3), the SSL
+injected.* That single sentence connects the E13b result, the design space (§3), the SSL
 objectives (§4), and the data caveat (§7).
 
 ## 8. Roadmap
