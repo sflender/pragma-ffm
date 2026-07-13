@@ -32,13 +32,14 @@ from pragma.utils import get_device, seed_everything
 REL = ["m_pop", "m_prior_fraud_rate", "cm_new"]
 
 
-def relational_features(parquet: str) -> np.ndarray:
-    """(N,3) causal merchant features in global (seq_id,ts) row order == encoded.npz order."""
-    df = pd.read_parquet(parquet, columns=["ts", "is_fraud", "card", "merchant_name"])
+def relational_features(parquet: str, entity: str = "merchant_name",
+                        card_col: str = "card") -> np.ndarray:
+    """(N,3) causal entity features in global (seq_id,ts) row order == encoded.npz order."""
+    df = pd.read_parquet(parquet, columns=["ts", "is_fraud", card_col, entity])
     N = len(df)
     o = pd.DataFrame({"gidx": np.arange(N, dtype=np.int64),
-                      "merch": pd.factorize(df["merchant_name"])[0].astype(np.int32),
-                      "card": df["card"].to_numpy(), "ts": df["ts"].to_numpy(),
+                      "merch": pd.factorize(df[entity])[0].astype(np.int32),
+                      "card": df[card_col].to_numpy(), "ts": df["ts"].to_numpy(),
                       "is_fraud": df["is_fraud"].to_numpy(np.int8)})
     o = o.sort_values(["merch", "ts"], kind="stable")
     g = o.groupby("merch", sort=False)
@@ -67,6 +68,8 @@ def main():
     ap.add_argument("--parquet", default="data/processed/transactions.parquet")
     ap.add_argument("--device", default="auto")
     ap.add_argument("--batch-size", type=int, default=256)
+    ap.add_argument("--entity", default="merchant_name", help="relational entity col (addr1 for IEEE)")
+    ap.add_argument("--card-col", default="card", help="sequence/card col for novelty feature")
     ap.add_argument("--out", default="artifacts/eval_fusion.json")
     args = ap.parse_args()
 
@@ -83,7 +86,7 @@ def main():
     Ete, yte = embed(model, AsOfDateDataset(args.data_dir, te, L), device, args.batch_size)
     print(f"[fusion] embedded train {len(ytr):,} test {len(yte):,} in {time.time()-t0:.0f}s")
 
-    rel = relational_features(args.parquet)
+    rel = relational_features(args.parquet, args.entity, args.card_col)
     Rtr, Rte = rel[tr], rel[te]
     print(f"[fusion] relational features built ({time.time()-t0:.0f}s)")
 
