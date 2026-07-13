@@ -26,22 +26,13 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from pragma.data.schema import CAL_SIZES, TABFORMER_FIELDS
+
 PAD, MASK, N_SPECIAL = 0, 1, 2  # reserved local ids present in every field
 
-# (name, type). Order is fixed and defines the field index used everywhere.
-FIELD_SPECS = [
-    ("amount", "num"),
-    ("use_chip", "cat"),
-    ("mcc", "cat"),
-    ("merchant_state", "cat"),
-    ("errors", "cat"),
-    ("hour", "cal"),          # 0..23
-    ("dow", "cal"),           # 0..6
-    ("merchant_name", "hash"),
-    ("merchant_city", "hash"),
-    ("zip", "hash"),
-]
-CAL_SIZES = {"hour": 24, "dow": 7}
+# Default field schema = TabFormer (backward-compat). The schema is dataset-specific and
+# lives in pragma.data.schema; pass field_specs=... to fit() for another dataset.
+FIELD_SPECS = TABFORMER_FIELDS
 
 
 def _crc(s: str, buckets: int) -> int:
@@ -72,8 +63,10 @@ class Tokenizer:
     def fit(cls, df_train: pd.DataFrame, n_amount_buckets: int, hash_buckets: int,
             include_dt: bool = False, n_dt_buckets: int = 20,
             dt_min_s: float = 1.0, dt_max_s: float = 31_536_000.0,
-            kind_overrides: dict | None = None) -> "Tokenizer":
-        specs = list(FIELD_SPECS) + ([("dt", "dtlog")] if include_dt else [])
+            kind_overrides: dict | None = None,
+            field_specs: list | None = None) -> "Tokenizer":
+        base = list(field_specs) if field_specs is not None else list(FIELD_SPECS)
+        specs = base + ([("dt", "dtlog")] if include_dt else [])
         if kind_overrides:                       # experiment hook: e.g. {"merchant_name": "cat"}
             specs = [(n, kind_overrides.get(n, k)) for n, k in specs]
         fields: list[FieldSpec] = []
