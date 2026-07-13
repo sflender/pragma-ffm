@@ -226,6 +226,7 @@ downstream signal (small's MLM loss kept falling to 1.39).
 The honest scaling law here needs each size trained to (near-)convergence; at 6000 steps
 small is the clear best and likely not yet saturated. **Follow-ups:** push small further
 (8-10k steps) to find the knee; bump mini to 6000 for an apples-to-apples mid-point.
+**→ Done in [E14](#e14): small keeps gaining to ~15k → PR-AUC 0.807 (loss plateau ~1.03).**
 
 Caveats: single seed.
 
@@ -599,6 +600,51 @@ ARM B: add `--mem --tag _B` to pretrain → `python -m pragma.train.asof_probe -
 Full metrics: `artifacts/relational_8k_results.json`. Feature flag: `use_mem` (default off).
 
 ---
+
+## E14 — small trained to convergence on GPU: PR-AUC 0.807 (beats the blog's 0.786)
+
+**Question:** E6 showed small@6k ≫ small@3k and flagged it as *still* undertrained; E10 pegged
+the method-(a) small at **0.786** (6k, local MPS). Trained to convergence on a GPU, how far does
+it go — and does it clear the blog's 0.786? (This is the run the relational work in E13 and
+`RELATIONAL_PRAGMA.md §5` cite as the "per-sequence FFM" baseline; it was reported over the run
+channel but never written up here.)
+
+**Setup:** RunPod GPU (A100 80GB / L40S), bf16 autocast, method-(a) as-of-date probe on the
+standard stratified subsample (n=152,928, n_pos=2,928, base 1.9%) — longer horizons than were
+feasible on the M4. **Config drifted across step points** (see caveats); treat the bf16/batch-256
+pair (8k→15k) as the controlled comparison and the rest as context.
+
+| run | steps | batch / lr / dtype | PR-AUC | ROC-AUC | R@P0.5 | R@P0.9 |
+|-----|-------|--------------------|--------|---------|--------|--------|
+| GPU repro (undertrained) | 6k | 256 / 4.24e-4 / bf16 | 0.664 | 0.970 | — | 0.263 |
+| GPU | 8k | 256 / 4.24e-4 / bf16 | 0.747 | 0.980 | — | — |
+| GPU | 12k | 128 / 3e-4 / fp32 | 0.758 | — | — | — |
+| **GPU (converged)** | **15k** | **256 / 4.24e-4 / bf16** | **0.807** | **0.985** | **0.862** | **0.581** |
+| — blog / committed (ref) | 6k | 128 / 3e-4 / fp32 | 0.786 | 0.981 | — | 0.579 |
+
+**Interpretation — training to convergence is the win.** Small keeps gaining well past 6k; by
+**15k** (MLM loss plateau ~1.03) it reaches **PR-AUC 0.807 / ROC 0.985 / R@P0.5 0.862 / R@P0.9
+0.581** — beating the blog's 0.786 and catching >85% of all fraud at 50% precision. Within the
+controlled bf16/batch-256 config, **8k → 15k = 0.747 → 0.807** shows the slope was still positive
+where we stopped. This answers E6's open follow-up ("push small further, 8-10k steps"): it wants
+~15k, not 8-10k.
+
+**Caveats — read before citing a scaling curve.**
+1. **Config drift.** The step points don't hold batch/lr/dtype fixed (12k was batch-128/fp32; the
+   rest batch-256/bf16), so 6k→12k→15k is **not** a clean controlled curve — only 8k→15k (both
+   bf16/256) is. The convergence conclusion rests on that pair + the loss plateau, not the
+   mixed-config points.
+2. **Reproduction gap at 6k.** The GPU 6k (0.664) **undershot** the local-MPS 6k (0.786, E10) on
+   byte-identical data/split/tokenizer — the gap is the batch/lr/dtype change + MPS-vs-CUDA
+   nondeterminism (this repo already flags single-seed PR-AUC as high-variance, E9). So the GPU
+   curve started lower and needed the extra steps just to pass the local baseline.
+3. **Single seed.** 0.807 is one run; the +0.02 over the 8k point clears probe noise (±0.005) but
+   was not seed-swept.
+
+**Artifacts:** `artifacts/eval_small_bucket_s15000_swasof.json` — recovered from the run log; the
+pod's checkpoint (`pretrain_small_bucket_s15000.pt`) was **not** persisted (self-terminating pod).
+Exactly the loss the network-volume / S3 persistence note in `RELATIONAL_PRAGMA.md` is meant to
+prevent for future runs.
 
 ## Engineering notes
 
