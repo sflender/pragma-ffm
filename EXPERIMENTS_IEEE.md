@@ -82,3 +82,82 @@ on-pod in 28s. Artifacts: `artifacts/ieee_moon_{nano,small}.json`.
 3. **The relational experiment:** entity-memory (`addr1`, `P_emaildomain`) cross-attention vs
    duct-tape fusion — does real cross-entity fraud rescue the architectural approach that lost
    on synthetic TabFormer (`RELATIONAL_PRAGMA §6.1`)? This is the reason IEEE is here.
+
+---
+
+## I2 — Client entity + longer sequences (do the FFM's own levers help?)
+
+**Question:** the moonshot FFM (I1) lost to LightGBM. Two natural levers: a **cleaner client
+entity** (`card1` is a noisy client; `card1+addr1` is closer to a real client) and **longer
+sequences** (`card1` histories run to ~15k txns; L=128 truncates). Do either close the gap?
+
+**Setup:** `small`, bucket+Δt, bf16, 8k steps; `scripts/ieee_probe_vs_lgbm.py` (FFM frozen
+probe vs causal-tabular LightGBM on the *same* target subsample). New `--seq-key` option.
+
+| arm | entity / L | base | FFM PR / ROC | LGBM PR / ROC | FFM−LGBM (PR) |
+|-----|-----------|------|--------------|---------------|---------------|
+| baseline (I1) | card1 / 128 | 0.030 | 0.106 / 0.726 | 0.157 / — | −0.051 |
+| **A: client entity** | card1+addr1 / 128 | 0.030 | **0.115** / 0.729 | 0.152 / 0.735 | **−0.037** |
+| B: longer sequences | card1 / 256 | 0.042 | 0.149 / 0.740 | 0.228 / 0.790 | **−0.079** |
+
+**Result:**
+- **Client entity helps (modestly).** Arm A shares the baseline's base rate, so it's directly
+  comparable: FFM 0.106→**0.115**, gap −0.051→**−0.037**. `card1+addr1` is a cleaner client
+  *and* gives 3× more training sequences (39,974 vs 13,553), easing data-starvation. Directionally
+  confirms the entity lever.
+- **Longer sequences do NOT help the FFM.** Arm B's gap *widens* to −0.079: LightGBM exploited
+  longer `card1` histories more (its causal aggregates get richer with length), while the FFM
+  didn't keep pace — and L=256 risks the RoPE long-window aliasing seen on TabFormer (E8/E10).
+
+**Caveat (methodological):** the `--seq-key` change re-factorised `card1` (int→string), reshuffling
+the per-card split, so Arm B lands on a different test partition (base **0.042** vs 0.030). PR-AUC
+scales with base rate, so **only the within-arm FFM−LGBM gap is comparable across rows**, not the
+absolute PR. Fix for future runs: pin the split independent of factorisation order. Also L=256
+crashed once on the B×L=65536 SDPA kernel limit — fixed by capping batch to 128 at L=256.
+Artifacts: `artifacts/ieee_moon_{A_card1addr1,B_card1_L256}.json`.
+
+## I3 — Why is even LightGBM weak? Feature ablation (the real diagnosis)
+
+**Question:** a proper IEEE-CIS model scores ROC ~0.96; our LightGBM sits at ~0.74–0.79. Bug, or
+setup? Local diagnostic — LightGBM across feature sets × splits (300 rounds, full test split):
+
+| features | split | ROC | PR-AUC |
+|----------|-------|-----|--------|
+| **full (~430)** | random | 0.963 | **0.771** |
+| full (~430) | temporal (competition-like) | 0.914 | 0.553 |
+| full (~430) | per-card (ours) | 0.883 | **0.586** |
+| **16 fields (ours)** | per-card | 0.809 | 0.238 |
+| 16 fields (ours) | temporal | 0.828 | 0.251 |
+
+**Findings:**
+1. **The dropped Vesta features are the dominant lever — ~0.35 PR-AUC.** Full-feature LGBM on our
+   exact per-card split: **PR 0.586**; our 16 interpretable fields: **PR 0.238**. The 400+ `V/C/D/M`
+   engineered columns (entity-relation aggregations, counts, timedeltas) carry most of the signal.
+2. **The per-card split is fine** — it scores *higher* than the temporal split (0.586 vs 0.553), so
+   our unseen-client methodology isn't the problem.
+3. **The moonshot's own LGBM (0.152) was under-powered** vs a clean 16-field LGBM (0.238): it fits
+   on the rebalanced target subsample (~10% base) then scores at 3% base, hurting PR calibration.
+   Fix: train LGBM on the natural distribution.
+
+**Everything in I1/I2 ran in a signal-starved toy regime.** The FFM-vs-trees question was never on a
+fair footing; features (and relational structure) dwarf the entity/length deltas.
+
+### Discussion — why the FFM can't *learn* the V-features (yet)
+
+Ideally the FFM learns these representations from raw sequences, making Vesta's engineering
+redundant. It fails here for four reasons, only some fundamental:
+1. **Architecturally blind to cross-entity signal (the ceiling).** The `V*` features are mostly
+   *cross-entity* aggregations (how many cards/emails/addresses tie together, network velocity),
+   computed with global data access. Our FFM attends **within one `card1` sequence** — other
+   entities are outside its receptive field, so it *cannot* learn them regardless of training. A
+   per-sequence model has a hard ceiling below full-feature trees.
+2. **MLM doesn't reward the aggregation** (proxy-alignment gap, §7.1): reconstructing a masked field
+   never requires computing fraud-relevant counts/ratios.
+3. **Frozen backbone + linear probe** can't recompute nonlinear aggregates it didn't surface.
+4. **Data starvation** — learning aggregation functions needs scale we lack (~8k windows).
+
+Within-sequence temporal signal (velocity/recency, overlapping `D`/`C`) the FFM *can* learn and
+partly does; the **cross-entity** bulk of `V` is out of reach for a per-sequence model. So making
+the V-features redundant requires a **relational** FFM (cross-entity memory / attention) + an
+**aligned objective** (relational SSL or fine-tuning) + **scale** — which is exactly the
+entity-memory experiment. That reframes it from "nice ablation" to the load-bearing test.
