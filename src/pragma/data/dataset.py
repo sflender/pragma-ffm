@@ -27,6 +27,8 @@ class WindowDataset(Dataset):
         self.amount = enc["amount_raw"]    # (N,) float32 raw amount
         self.split_arr = enc["split"]      # (N,) int8
         self.is_fraud = enc["is_fraud"]    # (N,) int8
+        mp = d / "merchant_mem.npz"
+        self.mem = np.load(mp)["mem"] if mp.exists() else None   # (N, d_mem) float32 or None
         self.F = self.codes.shape[1]
         self.L = max_seq_len
         stride = stride or max_seq_len     # non-overlapping by default
@@ -69,13 +71,18 @@ class WindowDataset(Dataset):
         amount = np.zeros(L, dtype=np.float32)
         amount[:length] = self.amount[w:w + length]
 
-        return {
+        out = {
             "codes": torch.from_numpy(codes),      # (L, F) long
             "times": torch.from_numpy(times),      # (L,) float
             "mask": torch.from_numpy(mask),        # (L,) bool  True=real
             "fraud": torch.from_numpy(fraud),      # (L,) long  {-1,0,1}
             "amount": torch.from_numpy(amount),    # (L,) float raw amount
         }
+        if self.mem is not None:
+            m = np.zeros((L, self.mem.shape[1]), dtype=np.float32)
+            m[:length] = self.mem[w:w + length]
+            out["mem"] = torch.from_numpy(m)       # (L, d_mem)
+        return out
 
 
 class AsOfDateDataset(Dataset):
@@ -95,6 +102,8 @@ class AsOfDateDataset(Dataset):
         self.amount = enc["amount_raw"]
         self.is_fraud = enc["is_fraud"]
         self.seq_id = enc["seq_id"]
+        mp = d / "merchant_mem.npz"
+        self.mem = np.load(mp)["mem"] if mp.exists() else None
         self.F = self.codes.shape[1]
         self.L = max_seq_len
         seq = np.load(d / "seq_index.npz")
@@ -125,10 +134,15 @@ class AsOfDateDataset(Dataset):
         amount = np.zeros(L, dtype=np.float32)
         amount[off:] = self.amount[a:g + 1]
 
-        return {
+        out = {
             "codes": torch.from_numpy(codes),
             "times": torch.from_numpy(times),
             "mask": torch.from_numpy(mask),
             "amount": torch.from_numpy(amount),
             "label": torch.tensor(int(self.is_fraud[g]), dtype=torch.long),
         }
+        if self.mem is not None:
+            m = np.zeros((L, self.mem.shape[1]), dtype=np.float32)
+            m[off:] = self.mem[a:g + 1]
+            out["mem"] = torch.from_numpy(m)
+        return out

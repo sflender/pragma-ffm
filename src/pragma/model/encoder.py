@@ -145,7 +145,9 @@ def _rotate_half(x: torch.Tensor) -> torch.Tensor:
 
 
 def _apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
-    # x: (B,H,L,dh); cos/sin: (B,1,L,dh)
+    # x: (B,H,L,dh); cos/sin: (B,1,L,dh). Match x's dtype so bf16 autocast doesn't get
+    # promoted back to fp32 here (which would make q/k fp32 while v stays bf16 and break SDPA).
+    cos, sin = cos.to(x.dtype), sin.to(x.dtype)
     return x * cos + _rotate_half(x) * sin
 
 
@@ -190,6 +192,40 @@ class RoPEAttention(nn.Module):
             q, k, v, attn_mask=attn_mask, dropout_p=self.drop if self.training else 0.0)
         out = out.transpose(1, 2).reshape(B, L, d)
         return self.proj(out)
+
+
+class MemoryCrossAttention(nn.Module):
+    """Cross-sequence relational block: each event (query) attends over the window's
+    per-event MERCHANT-memory tokens (keys/values). The memory vector for an event is a
+    precomputed, causal, cross-card summary of its merchant's recent activity, so this
+    injects "what's happening at this merchant across all cards" into the record embedding
+    — signal a per-sequence encoder cannot see. Applied once after the History Encoder.
+    """
+
+    def __init__(self, d_model: int, n_heads: int, d_mem: int, dropout: float):
+        super().__init__()
+        assert d_model % n_heads == 0
+        self.h, self.dh = n_heads, d_model // n_heads
+        # project the raw memory vector -> a d_model memory token per event
+        self.mem_proj = nn.Sequential(nn.Linear(d_mem, d_model), nn.GELU(),
+                                      nn.LayerNorm(d_model))
+        self.q = nn.Linear(d_model, d_model)
+        self.kv = nn.Linear(d_model, 2 * d_model)
+        self.proj = nn.Linear(d_model, d_model)
+        self.drop = dropout
+
+    def forward(self, x, mem, key_pad):
+        # x:(B,L,d) events  mem:(B,L,d_mem)  key_pad:(B,L) True=real
+        B, L, d = x.shape
+        m = self.mem_proj(mem)                                  # (B,L,d) memory tokens
+        q = self.q(x).reshape(B, L, self.h, self.dh).transpose(1, 2)
+        kv = self.kv(m).reshape(B, L, 2, self.h, self.dh).permute(2, 0, 3, 1, 4)
+        k, v = kv[0], kv[1]                                     # (B,H,L,dh)
+        attn_mask = torch.zeros(B, 1, 1, L, device=x.device, dtype=q.dtype)
+        attn_mask = attn_mask.masked_fill(~key_pad[:, None, None, :], -1e4)
+        out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask,
+                                             dropout_p=self.drop if self.training else 0.0)
+        return self.proj(out.transpose(1, 2).reshape(B, L, d))
 
 
 class HistoryLayer(nn.Module):

@@ -11,7 +11,8 @@ import torch
 import torch.nn as nn
 
 from pragma.config import ModelConfig
-from pragma.model.encoder import EventEncoder, FieldValueEmbedder, HistoryEncoder
+from pragma.model.encoder import (EventEncoder, FieldValueEmbedder, HistoryEncoder,
+                                  MemoryCrossAttention)
 from pragma.model.tokenizer import Tokenizer
 
 
@@ -26,6 +27,9 @@ class MiniPragma(nn.Module):
         self.event = EventEncoder(d, cfg.n_heads, cfg.d_ff, cfg.n_event_layers, cfg.dropout)
         self.history = HistoryEncoder(
             d, cfg.n_heads, cfg.d_ff, cfg.n_history_layers, cfg.dropout, cfg.rope_theta)
+        if cfg.use_mem:
+            self.mem_norm = nn.LayerNorm(d)
+            self.mem = MemoryCrossAttention(d, cfg.n_heads, cfg.d_mem, cfg.dropout)
         self.mlm_norm = nn.LayerNorm(d)
         self.mlm_heads = nn.ModuleList([nn.Linear(d, f.vocab) for f in tok.fields])
         self.apply(self._init)
@@ -39,7 +43,7 @@ class MiniPragma(nn.Module):
         elif isinstance(m, nn.Embedding):
             nn.init.trunc_normal_(m.weight, std=0.02)
 
-    def encode(self, codes, times, mask, amount=None, causal=False):
+    def encode(self, codes, times, mask, amount=None, causal=False, mem=None):
         """Return (record_emb (B,L,d), field_out (B,L,F,d))."""
         tokens = self.embedder(codes, amount)
         evt, field_out = self.event(tokens)
@@ -51,12 +55,15 @@ class MiniPragma(nn.Module):
         else:                                   # "time" or "none" (none ignores pos)
             pos = times
         r = self.history(evt, pos, mask, causal, use_rope=(pm != "none"))
+        # relational merchant-memory cross-attention (residual, pre-norm)
+        if self.cfg.use_mem and mem is not None:
+            r = r + self.mem(self.mem_norm(r), mem, mask)
         return r, field_out
 
-    def record_embeddings(self, codes, times, mask, amount=None, causal=False):
-        return self.encode(codes, times, mask, amount, causal)[0]
+    def record_embeddings(self, codes, times, mask, amount=None, causal=False, mem=None):
+        return self.encode(codes, times, mask, amount, causal, mem)[0]
 
-    def mlm_logits(self, codes, times, mask, amount=None):
-        r, field_out = self.encode(codes, times, mask, amount)
+    def mlm_logits(self, codes, times, mask, amount=None, mem=None):
+        r, field_out = self.encode(codes, times, mask, amount, mem=mem)
         fused = self.mlm_norm(field_out + r.unsqueeze(2))   # (B,L,F,d)
         return [head(fused[:, :, j, :]) for j, head in enumerate(self.mlm_heads)]
