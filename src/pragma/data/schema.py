@@ -47,11 +47,22 @@ IEEE_CIS_FIELDS = [
     ("DeviceInfo", "hash"),     # high-card device string (from identity join)
 ]
 
+# Synthetic controlled generator (scripts/gen_synth_relational.py). merchant is the shared
+# cross-card entity; fraud can be per-card (in the sequence) or relational (merchant state).
+SYNTH_FIELDS = [
+    ("amount", "num"),
+    ("mcc", "cat"),
+    ("hour", "cal"),
+    ("dow", "cal"),
+    ("merchant", "hash"),
+]
+
 CAL_SIZES = {"hour": 24, "dow": 7}
 
 SCHEMAS = {
     "tabformer": TABFORMER_FIELDS,
     "ieee_cis": IEEE_CIS_FIELDS,
+    "synth": SYNTH_FIELDS,
 }
 
 
