@@ -1,0 +1,15 @@
+{
+  "dataset": "ieee_cis",
+  "ckpt": "artifacts/pretrain_small_bucket_A.pt",
+  "L": 128,
+  "n": 69218,
+  "base_rate": 0.029674362160131758,
+  "ffm_probe": {
+    "pr_auc": 0.11492108594663558,
+    "roc_auc": 0.7287412666358044
+  },
+  "lightgbm": {
+    "pr_auc": 0.15229853671394233,
+    "roc_auc": 0.7354910870263239
+  }
+}

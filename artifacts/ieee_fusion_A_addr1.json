@@ -1,0 +1,22 @@
+{
+  "ckpt": "artifacts/pretrain_small_bucket_A.pt",
+  "L": 128,
+  "n": 58627,
+  "base": 0.041533764306548177,
+  "embedding_only": {
+    "pr_auc": 0.16547011833955932,
+    "roc_auc": 0.7406199096497547
+  },
+  "relational_only": {
+    "pr_auc": 0.12372163111947074,
+    "roc_auc": 0.7050588068832937
+  },
+  "fusion_logreg": {
+    "pr_auc": 0.17092129722668686,
+    "roc_auc": 0.7465878501634758
+  },
+  "fusion_lgbm": {
+    "pr_auc": 0.16488556788220107,
+    "roc_auc": 0.7571055150308944
+  }
+}

@@ -26,16 +26,20 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--parquet", default="data/processed/transactions.parquet")
     ap.add_argument("--data-dir", default="data/processed_dt")
+    ap.add_argument("--entity", default="merchant_name",
+                    help="entity column to aggregate over (e.g. addr1 for IEEE)")
+    ap.add_argument("--card-col", default="card",
+                    help="the sequence/card column, for the card-entity novelty feature")
     args = ap.parse_args()
 
     t0 = time.time()
-    df = pd.read_parquet(args.parquet, columns=["ts", "is_fraud", "card", "amount",
-                                                "merchant_name", "split"])
+    df = pd.read_parquet(args.parquet, columns=["ts", "is_fraud", args.card_col, "amount",
+                                                args.entity, "split"])
     N = len(df)
     slog_amt = (np.sign(df["amount"].to_numpy()) * np.log1p(np.abs(df["amount"].to_numpy()))).astype(np.float32)
     o = pd.DataFrame({"gidx": np.arange(N, dtype=np.int64),
-                      "merch": pd.factorize(df["merchant_name"])[0].astype(np.int32),
-                      "card": df["card"].to_numpy(), "ts": df["ts"].to_numpy(np.int64),
+                      "merch": pd.factorize(df[args.entity])[0].astype(np.int32),
+                      "card": df[args.card_col].to_numpy(), "ts": df["ts"].to_numpy(np.int64),
                       "isf": df["is_fraud"].to_numpy(np.int8), "slog": slog_amt})
     o = o.sort_values(["merch", "ts"], kind="stable")
     g = o.groupby("merch", sort=False)

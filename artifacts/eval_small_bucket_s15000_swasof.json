@@ -1,0 +1,16 @@
+{
+  "arm": "pragma_small_bucket_s15000_swasof",
+  "ckpt": "artifacts/pretrain_small_bucket_s15000.pt",
+  "eval": "sliding_window_asof",
+  "L": 128,
+  "test_base_rate": 0.019146264908976772,
+  "metrics": {
+    "n": 152928,
+    "n_pos": 2928,
+    "roc_auc": 0.9851746061020037,
+    "pr_auc": 0.8071887688924445,
+    "recall@p0.5": 0.862363387978142,
+    "recall@p0.9": 0.5812841530054644
+  },
+  "note": "Converged small (bf16, batch 256, lr 4.24e-4, 15k steps) on RunPod GPU; MLM loss plateau ~1.03. Recovered from the run log (pod checkpoint not persisted). See EXPERIMENTS.md E14."
+}
