@@ -161,3 +161,52 @@ partly does; the **cross-entity** bulk of `V` is out of reach for a per-sequence
 the V-features redundant requires a **relational** FFM (cross-entity memory / attention) + an
 **aligned objective** (relational SSL or fine-tuning) + **scale** — which is exactly the
 entity-memory experiment. That reframes it from "nice ablation" to the load-bearing test.
+
+---
+
+## I4 — Learned entity-memory (`addr1`): does cross-entity signal help on real data?
+
+**Question:** the load-bearing relational test, mirroring TabFormer E13 on *real* cross-entity
+fraud. Sequence on the client (`card1`); give the model a causal **memory over `addr1`** (billing
+region, shared across cards). Does injecting cross-entity signal — as a duct-tape probe feature or
+architecturally (memory cross-attention) — close the gap? On synthetic TabFormer, memory-CSA *lost*
+(§6.1); the prediction was that *real* relational fraud might reverse it.
+
+**Setup:** `small`, bucket+Δt, bf16, 8k steps, L=128, seq=`card1`; 5-dim causal `addr1` memory
+(`build_merchant_memory.py --entity addr1 --card-col card1`). All arms share one split (base 0.042),
+so the four-way is internally comparable. Repro: `fusion_probe.py --entity addr1` (Arm A no-mem) +
+`asof_probe` on the `--mem` backbone (Arm B).
+
+| arm | PR-AUC | ROC-AUC | R@P0.5 |
+|-----|--------|---------|--------|
+| relational-only (`addr1` feats) | 0.124 | 0.705 | — |
+| memory-CSA (backbone, MLM) | 0.161 | **0.762** | 0.027 |
+| embedding-only (no-mem) | 0.166 | 0.741 | — |
+| **duct-tape fusion (logreg)** | **0.171** | 0.747 | — |
+| duct-tape fusion (LGBM) | 0.165 | 0.757 | — |
+
+**Result — the single-entity memory barely moves PR-AUC, and memory-CSA loses again.**
+- **Duct-tape adds ~nothing** (+0.005 logreg, −0.001 lgbm over embedding-only) — vs +0.04–0.10 on
+  TabFormer. **memory-CSA (0.161) sits *below* embedding-only (0.166)** and below the duct-tape —
+  **replicating the TabFormer E13 negative on real data.**
+- **Nuance worth keeping:** memory-CSA has the **best ROC (0.762 vs 0.741)** but the worst
+  high-precision recall (R@P0.5 0.027). So the `addr1` memory *does* improve overall ranking — it
+  captures some real cross-entity signal — but it **hurts the high-precision tail** PR-AUC rewards.
+
+**Why the `addr1` memory is too weak (and what it implies):**
+1. **`addr1` is already an input field** — a 5-feature aggregate over it is largely redundant with
+   what the FFM embedding already encodes. TabFormer's `merchant_name` memory was stronger partly
+   because merchant identity was *hashed away* in the base tokenizer.
+2. **IEEE's cross-entity signal is multi-entity.** The Vesta `V*` features (I3, worth ~0.35 PR-AUC)
+   aggregate over `card+addr+email+device` combinations; a single `addr1` memory is a thin proxy.
+3. **K=1 compression is lossy.** Our memory is a single summary vector per entity — the degenerate
+   K=1 case of a full **cross-sequence ("third-transformer") encoder** that would attend to the last
+   K causal entity-neighbours. And it carries the same proxy-alignment gap (MLM doesn't reward using
+   it), so architectural injection underperforms probe injection, as on TabFormer.
+
+**Takeaway — consistent across both datasets:** bolting a *single, hand-picked* entity memory onto
+the FFM (architecturally or via duct-tape) does **not** recover the cross-entity signal. The thesis
+(FFM supersedes hand-engineered relational features) needs **rich multi-entity cross-sequence
+attention** (last-K neighbours over `addr1`+`card2`+email) **plus a relational pretraining objective**
+that rewards using it — not a K=1 summary under pure MLM. That is the concrete next architecture.
+Artifacts: `artifacts/ieee_{fusion_A,memcsa_B}_addr1.json`.
