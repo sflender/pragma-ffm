@@ -30,6 +30,9 @@ def main():
                     help="entity column to aggregate over (e.g. addr1 for IEEE)")
     ap.add_argument("--card-col", default="card",
                     help="the sequence/card column, for the card-entity novelty feature")
+    ap.add_argument("--windows", default="",
+                    help="comma-sep seconds for windowed-velocity features (e.g. 3600,900) — "
+                         "the count of prior same-entity txns within each window (burst detector)")
     args = ap.parse_args()
 
     t0 = time.time()
@@ -52,13 +55,25 @@ def main():
     o["cm"] = o["card"].astype(np.int64) * 100_000_000 + o["merch"]
     cm_new = (o.groupby("cm", sort=False).cumcount().to_numpy() == 0).astype(np.float32)
 
-    feats = np.column_stack([
+    cols = [
         np.log1p(n_prior),
         prior_fraud,
         prior_meanamt,
         np.log1p(np.clip(dt_merch, 0, None)),
         cm_new,
-    ]).astype(np.float32)
+    ]
+    # windowed velocity: prior same-entity txns within W seconds (the burst/compromise detector).
+    wins = [int(w) for w in args.windows.split(",") if w.strip()]
+    if wins:
+        tsv = o["ts"].to_numpy(np.int64)                     # o is sorted by (merch, ts)
+        idxmap = o.groupby("merch", sort=False).indices      # merch -> positional rows (ts-ascending)
+        for W in wins:
+            vel = np.zeros(len(o), np.float32)
+            for _, pos in idxmap.items():
+                t = tsv[pos]
+                vel[pos] = np.arange(len(t)) - np.searchsorted(t, t - W, side="left")
+            cols.append(np.log1p(vel))
+    feats = np.column_stack(cols).astype(np.float32)
     o_feats = pd.DataFrame(feats, index=o.index)
     o_feats["gidx"] = o["gidx"].to_numpy()
     o_feats = o_feats.sort_values("gidx", kind="stable")               # restore global order

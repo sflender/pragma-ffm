@@ -1,0 +1,18 @@
+{
+  "note": "Controlled synthetic 2x2. relational_* recovered from ntfy message stream (attachments expired); per_card_* from saved attachments. LGBM windowed-velocity from local ground-truth validation.",
+  "relational": {
+    "base": 0.0277,
+    "embedding_only":  {"pr_auc": 0.035, "roc_auc": 0.559},
+    "memory_csa":      {"pr_auc": 0.047, "roc_auc": 0.604},
+    "ducttape_logreg": {"pr_auc": 0.047, "roc_auc": 0.588},
+    "relational_only_oldfeats": {"pr_auc": 0.044},
+    "lgbm_windowed_velocity_groundtruth": {"pr_auc": 0.36, "roc_auc": 0.83}
+  },
+  "per_card": {
+    "base": 0.0244,
+    "embedding_only":  {"pr_auc": 0.812, "roc_auc": 0.951},
+    "memory_csa":      {"pr_auc": 0.813, "roc_auc": 0.941},
+    "ducttape_logreg": {"pr_auc": 0.831, "roc_auc": 0.967},
+    "relational_only_oldfeats": {"pr_auc": 0.085}
+  }
+}
