@@ -22,8 +22,10 @@ into strong performance (0.05 vs 0.36 on our benchmark). Injecting the same feat
 incentive to preserve a feature that does not help token reconstruction, so a frozen linear
 probe cannot read it — *even when it is handed to the model as input*. We connect this to
 generative recommender FMs (HSTU, OneRec), which avoid the gap precisely because their
-pretraining objective *is* the task and they train end-to-end, and we show [placeholder: S2]
-that aligning the objective and unfreezing the backbone recovers the signal.
+pretraining objective *is* the task and they train end-to-end. Aligning the objective and
+unfreezing the backbone *partially* recovers the signal (≈2× the frozen probe) but a rank-1
+memory does not close the gap to the GBDT — the architecture, not just the training recipe, still
+matters.
 
 ## 1. Introduction
 
@@ -214,13 +216,27 @@ close it for fraud: **align the objective** (a fraud-relevant or relational self
 instead of pure MLM) and **do not freeze** (end-to-end or LoRA, so the head can shape the
 backbone).
 
-> **[Placeholder — S2, in progress]** We fine-tune the *same* memory architecture **end-to-end on
-> the fraud label** over as-of-date windows on the synthetic `relational` data, and compare to the
-> frozen-MLM memory-CSA (0.047) and the ground-truth ceiling (LightGBM windowed velocity, 0.36).
-> *Result table to be inserted:* end-to-end + memory PR-AUC = `___`; end-to-end no-memory (control)
-> = `___`. Prediction: end-to-end + memory recovers a large fraction of the 0.36 ceiling, while the
-> no-memory control stays at base — confirming that the failure is the objective + freezing, not
-> the sequence architecture.
+**S2: aligning the objective and unfreezing helps — but a rank-1 memory does not close the gap.**
+We fine-tune the *same* architecture **end-to-end on the fraud label** over as-of-date windows on
+the synthetic `relational` data:
+
+| arm | PR-AUC | ROC-AUC |
+|---|---|---|
+| frozen-MLM memory-CSA (S1) | 0.047 | 0.60 |
+| **end-to-end + memory (S2)** | **0.080** | **0.68** |
+| end-to-end, no memory (control) | 0.043 | 0.63 |
+| LightGBM w/ windowed velocity (ceiling) | 0.36 | 0.83 |
+
+Two confirmations and a caveat. Aligning the objective and unfreezing **nearly doubles** PR-AUC
+over the frozen-MLM memory-CSA (0.047→0.080) and lifts ROC (0.60→0.68): the fix is *directionally*
+correct — the cross-entity signal becomes more extractable once the objective rewards it and the
+head can shape the backbone. The **no-memory control stays at base** (0.043), confirming the
+memory is *necessary*: objective-alignment and unfreezing alone cannot make a per-sequence model
+see cross-entity signal. But end-to-end fine-tuning of this **rank-1** (single-summary-vector)
+memory recovers only ≈1/5 of the GBDT-accessible signal (0.36). The training recipe was the wrong
+first suspect *and* an incomplete fix: closing the gap needs a richer **multi-entity, last-K
+cross-sequence** encoder (§8), not just an aligned objective over a compressed memory. The
+direction is confirmed; the magnitude says the *architecture* still matters.
 
 ## 8. Limitations
 

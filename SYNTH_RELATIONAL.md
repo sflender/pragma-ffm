@@ -104,3 +104,26 @@ transient cross-entity signal they *can't* embed (real-time "trending") they inj
 serving-time features — i.e. the duct-tape. Both levers (aligned objective, unfrozen head) are
 the concrete next experiments, now backed by a ground-truth controlled result rather than
 conjecture.
+
+## S2 — the fix: align the objective + unfreeze (end-to-end fine-tuning)
+
+Directly testing the fix S1 pointed to: train the *same* memory architecture **end-to-end on the
+fraud label** over as-of-date windows, instead of frozen MLM + linear probe
+(`scripts/finetune_synth.py`).
+
+| arm | PR-AUC | ROC-AUC |
+|-----|--------|---------|
+| frozen-MLM memory-CSA (S1) | 0.047 | 0.60 |
+| **end-to-end + memory (S2)** | **0.080** | **0.68** |
+| end-to-end, no memory (control) | 0.043 | 0.63 |
+| LightGBM w/ windowed velocity (ceiling) | 0.36 | 0.83 |
+
+**Result — the fix is directionally right but a rank-1 memory doesn't close the gap.** Aligning
+the objective and unfreezing ≈doubles PR-AUC over the frozen probe (0.047→0.080) and lifts ROC
+(0.60→0.68) — the cross-entity signal *does* become more extractable when the objective rewards it
+and the head can shape the backbone. The **no-memory control stays at base (0.043)**, confirming
+the memory is *necessary* (objective+unfreezing can't help a per-sequence model see cross-entity
+signal). But end-to-end fine-tuning recovers only ≈1/5 of the GBDT-accessible signal (0.36): a
+single-summary-vector memory is too lossy. This motivates the **multi-entity, last-K cross-sequence
+("third-transformer") encoder** as the architecture that should actually close the gap.
+Artifacts: `artifacts/synth_finetune_results.json`.

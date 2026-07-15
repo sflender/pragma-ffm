@@ -1,0 +1,7 @@
+{
+  "note": "S2 end-to-end supervised fine-tuning on synth relational (base 0.028). Compare vs S1 frozen-MLM memory-CSA (0.047) and LGBM windowed-velocity ceiling (0.36).",
+  "finetune_mem_endtoend":   {"pr_auc": 0.0797, "roc_auc": 0.684, "epochs": 10},
+  "finetune_nomem_control":  {"pr_auc": 0.0431, "roc_auc": 0.627, "epochs": 10},
+  "ref_frozen_memcsa_s1":    {"pr_auc": 0.047,  "roc_auc": 0.604},
+  "ref_lgbm_windowed_vel":   {"pr_auc": 0.36,   "roc_auc": 0.83}
+}
