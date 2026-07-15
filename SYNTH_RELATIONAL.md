@@ -53,14 +53,54 @@ The controlled 2×2, mirroring the LightGBM table with the actual model
 | **embedding-only** (per-sequence FFM, no memory) | should **detect** (card history) | should **fail** |
 | **memory-CSA** (+ windowed-velocity merchant memory) | ≈ same (memory irrelevant) | should **recover** |
 
-**Prediction:** memory-CSA **wins on relational fraud and ties on per_card** — which would
-**reverse** the memory-CSA negative from TabFormer (§6.1) and IEEE (I4). The reason those were
-negative is now precise: there the relational signal was weak/absent or the memory lacked the
-right feature; here it is real *and* the memory captures it. This is the controlled proof that the
-memory mechanism recovers cross-entity signal a per-sequence model cannot — the positive result the
-thesis needs before investing in the full multi-entity cross-sequence ("third-transformer")
-architecture on real relational data (IBM AML / Elliptic).
+**I predicted memory-CSA would win on relational and reverse the TabFormer/IEEE negative. It did
+not — and the actual result is sharper and more useful than the win would have been.**
 
-**Status:** generator + memory + pipeline validated locally end-to-end; the GPU FFM run is queued
-and blocked only on the network egress allowlist reset (needs `api.runpod.io`, `ntfy.sh` re-added).
-Data is generated on-pod (no external dependency once RunPod is reachable).
+### Result (`small`, 6k steps, `artifacts/synth_2x2_results.json`)
+
+| arm | **per_card** (base 0.024) | **relational** (base 0.028) |
+|-----|---------------------------|------------------------------|
+| embedding-only (per-sequence FFM) | **PR 0.81 / ROC 0.95** ✓ | PR 0.035 / ROC 0.56 ✗ |
+| memory-CSA (+ windowed-velocity memory) | PR 0.81 / ROC 0.94 | PR 0.047 / ROC 0.60 ✗ |
+| duct-tape fusion (probe) | PR 0.83 / ROC 0.97 | PR 0.047 / ROC 0.59 ✗ |
+| **— LGBM w/ windowed velocity (ground truth)** | — | **PR 0.36 / ROC 0.83** ✓ |
+
+Two clean findings, both confirmed against ground truth:
+
+1. **Per-sequence architectural blindness is real and total.** The FFM *nails* per_card fraud
+   (0.81) — fraud in a card's own history is exactly what a sequence model captures — and
+   *collapses to base* on relational fraud (0.035 ≈ base 0.028). Same model, same data
+   generator, opposite outcome, driven only by *where the signal lives*.
+
+2. **The frozen-MLM recipe cannot extract cross-entity signal even when handed the exact
+   feature.** memory-CSA's memory *contains* the windowed-velocity feature that LightGBM turns
+   into **PR 0.36** — yet memory-CSA reaches only **0.047** (ROC 0.56→0.60, essentially still
+   base). The *same feature* recovers the fraud at the **supervised** head (LGBM 0.36) and fails
+   in the **MLM-pretrained backbone read by a frozen linear probe** (0.047). This is the
+   **proxy-alignment gap demonstrated with ground truth**: MLM has no reason to preserve a
+   feature that doesn't help token reconstruction, so the frozen probe can't read it — *even
+   when it's literally in the input.*
+
+**This does not reverse the TabFormer (§6.1) and IEEE (I4) memory-CSA negatives — it explains
+them, definitively.** Those weren't dataset artifacts; they're the structural consequence of
+injecting relational signal into a frozen SSL-proxy backbone. The controlled setting removes
+every confound (the signal is real, strong, and provably in the memory) and the negative
+persists — which is far stronger evidence than another noisy real-data null.
+
+**Caveat:** the duct-tape arm here used the *old* 3 relational features (popularity, prior fraud
+rate, novelty), **not** windowed velocity, so its 0.047 is not a fair "FFM-embedding ⊕ velocity"
+test — the honest supervised-injection reference is the **LGBM w/ windowed velocity (0.36)**. A
+fusion probe fed windowed velocity would very likely land near 0.36 too, sharpening the
+"inject downstream, not in the SSL backbone" contrast.
+
+### What it means for the architecture
+
+The fix is now precisely motivated, and it matches what production recsys FMs (HSTU, OneRec) do
+to avoid this exact gap: **(a) align the objective** — train with a fraud-relevant or
+relational-SSL objective instead of pure MLM, and/or **(b) don't freeze** — end-to-end / LoRA so
+the head can extract the memory signal. Recsys sequence models sidestep the proxy-alignment gap
+because their pretraining objective *is* the task (next-item) and they train end-to-end; the
+transient cross-entity signal they *can't* embed (real-time "trending") they inject as
+serving-time features — i.e. the duct-tape. Both levers (aligned objective, unfrozen head) are
+the concrete next experiments, now backed by a ground-truth controlled result rather than
+conjecture.

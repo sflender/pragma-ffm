@@ -1,0 +1,15 @@
+{
+  "arm": "pragma_small_bucket_per_card_B_swasof",
+  "ckpt": "artifacts/pretrain_small_bucket_per_card_B.pt",
+  "eval": "sliding_window_asof",
+  "L": 128,
+  "test_base_rate": 0.02438727726084048,
+  "metrics": {
+    "n": 16443,
+    "n_pos": 401,
+    "roc_auc": 0.9405039016969482,
+    "pr_auc": 0.8133395154543631,
+    "recall@p0.5": 0.827930174563591,
+    "recall@p0.9": 0.800498753117207
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "ckpt": "artifacts/pretrain_small_bucket_per_card_A.pt",
+  "L": 128,
+  "n": 16443,
+  "base": 0.02438727726084048,
+  "embedding_only": {
+    "pr_auc": 0.8119826146167863,
+    "roc_auc": 0.9513244690293963
+  },
+  "relational_only": {
+    "pr_auc": 0.0853434816037506,
+    "roc_auc": 0.8337615784749571
+  },
+  "fusion_logreg": {
+    "pr_auc": 0.8311453862251827,
+    "roc_auc": 0.9673646577982175
+  },
+  "fusion_lgbm": {
+    "pr_auc": 0.8366282651333038,
+    "roc_auc": 0.9610309098218176
+  }
+}
