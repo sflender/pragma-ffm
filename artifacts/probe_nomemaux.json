@@ -1,0 +1,15 @@
+{
+  "arm": "pragma_small_bucket_nomemaux_swasof",
+  "ckpt": "artifacts/pretrain_small_bucket_nomemaux.pt",
+  "eval": "sliding_window_asof",
+  "L": 128,
+  "test_base_rate": 0.027698648402933512,
+  "metrics": {
+    "n": 16499,
+    "n_pos": 457,
+    "roc_auc": 0.5799833560535979,
+    "pr_auc": 0.041829363786899214,
+    "recall@p0.5": 0.002188183807439825,
+    "recall@p0.9": 0.002188183807439825
+  }
+}

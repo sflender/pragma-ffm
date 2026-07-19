@@ -170,7 +170,7 @@ Two reference ceilings (LightGBM, test base 0.028):
 |-----|--------|---------|
 | memory-CSA, pure MLM (S1 repro) | 0.058 | 0.618 |
 | **memory-CSA + velocity-SSL aux (`--aux-vel-lambda`)** | **0.121** | **0.760** |
-| velocity-SSL aux **without** memory input (negative control) | see note | |
+| velocity-SSL aux **without** memory input (negative control) | 0.042 | 0.580 |
 
 - **Aligning the SSL objective ≈doubles the frozen probe** (0.058 → 0.121, ROC 0.618 → 0.760). Adding
   a velocity-regression aux loss — with the velocity feature already in the memory *input* — forces
@@ -180,9 +180,10 @@ Two reference ceilings (LightGBM, test base 0.028):
 - **But 0.121 ≪ 0.409.** Objective-alignment recovers only a fraction of what the cross-sequence
   architecture does. The rank-1 memory bottleneck limits how much any objective can extract — the
   decisive lever is the **architecture** (rich cross-sequence attention over raw neighbours), not the
-  objective. (The negative control — aux loss with *no* memory input, so the cross-card signal isn't
-  available to preserve — is expected to stay near base, confirming the aux needs the signal present
-  in the input; result appended when the arm completes.)
+  objective. The **negative control confirms this**: the same aux loss with *no* memory input — so the
+  cross-card signal isn't available to preserve — stays at **base (0.042 ≈ per-sequence 0.037)**. So
+  #2 needs *both* the signal present in the input (memory) *and* the objective rewarding it; neither
+  alone suffices.
 
 ### The full arc
 
@@ -202,4 +203,4 @@ dominates objective-alignment. Caveats: single seed / single generator; `--xseq`
 backbone* is frozen — not a pure linear probe); the velocity-only 0.36 is a feature-specific
 reference, so the full-feature 0.527 is the more honest upper bound (xseq reaches 78% of it).
 Artifacts: `artifacts/ft_xseq.json`, `ft_xseqfrozen.json`, `ft_mem.json`, `ft_nomem.json`,
-`probe_memaux.json`, `probe_memonly.json`, `lgbm_ceiling.json`.
+`probe_memaux.json`, `probe_memonly.json`, `probe_nomemaux.json`, `lgbm_ceiling.json`.
