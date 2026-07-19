@@ -104,6 +104,8 @@ class AsOfDateDataset(Dataset):
         self.seq_id = enc["seq_id"]
         mp = d / "merchant_mem.npz"
         self.mem = np.load(mp)["mem"] if mp.exists() else None
+        np_ = d / "entity_nbr.npz"                     # cross-sequence neighbours (the "third transformer")
+        self.nbr = np.load(np_) if np_.exists() else None
         self.F = self.codes.shape[1]
         self.L = max_seq_len
         seq = np.load(d / "seq_index.npz")
@@ -145,4 +147,9 @@ class AsOfDateDataset(Dataset):
             m = np.zeros((L, self.mem.shape[1]), dtype=np.float32)
             m[off:] = self.mem[a:g + 1]
             out["mem"] = torch.from_numpy(m)
+        if self.nbr is not None:                       # target event's last-K entity neighbours
+            out["nbr_codes"] = torch.from_numpy(self.nbr["codes"][g].astype(np.int64))   # (K,F)
+            out["nbr_amount"] = torch.from_numpy(self.nbr["amount"][g].astype(np.float32))  # (K,)
+            out["nbr_dt"] = torch.from_numpy(self.nbr["dt"][g].astype(np.float32))       # (K,)
+            out["nbr_mask"] = torch.from_numpy(self.nbr["mask"][g].astype(bool))         # (K,)
         return out
