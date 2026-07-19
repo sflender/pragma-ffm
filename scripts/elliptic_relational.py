@@ -43,39 +43,45 @@ class NodeModel(nn.Module):
     def __init__(self, d_local, d_agg, d=128, arm="local", k=16):
         super().__init__()
         self.arm = arm
+        # "full" arms let neighbours carry local+agg features (matched receptive field vs the agg summary)
+        self.nbr_full = "full" in arm
+        self.has_agg = arm in ("local+agg", "local+agg+xseq", "local+agg+xseqfull")
+        self.has_nbr = arm in ("local+meanpool", "local+xseq", "local+agg+xseq",
+                               "local+xseqfull", "local+agg+xseqfull")
+        self.has_xseq = "xseq" in arm
         self.enc = nn.Sequential(nn.Linear(d_local, d), nn.GELU(), nn.LayerNorm(d),
                                  nn.Linear(d, d), nn.GELU())
-        if arm in ("local+agg", "local+agg+xseq"):
+        if self.has_agg:
             self.agg_proj = nn.Sequential(nn.Linear(d_agg, d), nn.GELU(), nn.LayerNorm(d))
-        if arm in ("local+meanpool", "local+xseq", "local+agg+xseq"):
-            self.nbr_enc = nn.Sequential(nn.Linear(d_local, d), nn.GELU(), nn.LayerNorm(d))
-        if arm in ("local+xseq", "local+agg+xseq"):
+        if self.has_nbr:
+            d_nbr = (d_local + d_agg) if self.nbr_full else d_local
+            self.nbr_enc = nn.Sequential(nn.Linear(d_nbr, d), nn.GELU(), nn.LayerNorm(d))
+        if self.has_xseq:
             self.xseq = CrossSequenceEncoder(d, n_heads=4, n_layers=1, dropout=0.1)
         self.head = nn.Linear(d, 1)
 
     def forward(self, x_local, x_agg=None, nbr_x=None, nbr_dt=None, nbr_mask=None):
         r = self.enc(x_local)                                   # (B,d)
-        if self.arm == "local+agg":
+        if self.has_agg:
             r = r + self.agg_proj(x_agg)
-        elif self.arm == "local+meanpool":
+        if self.has_nbr:
             ne = self.nbr_enc(nbr_x)                            # (B,K,d)
-            m = nbr_mask[..., None].float()
-            r = r + (ne * m).sum(1) / m.sum(1).clamp(min=1)
-        elif self.arm == "local+xseq":
-            ne = self.nbr_enc(nbr_x)                            # (B,K,d)
-            r = r + self.xseq(r, ne, nbr_dt, nbr_mask)
-        elif self.arm == "local+agg+xseq":                     # engineered summary AND raw attention
-            r = r + self.agg_proj(x_agg)
-            ne = self.nbr_enc(nbr_x)
-            r = r + self.xseq(r, ne, nbr_dt, nbr_mask)
+            if self.has_xseq:
+                r = r + self.xseq(r, ne, nbr_dt, nbr_mask)
+            else:                                              # meanpool
+                m = nbr_mask[..., None].float()
+                r = r + (ne * m).sum(1) / m.sum(1).clamp(min=1)
         return self.head(r).squeeze(-1)
 
 
-def run_torch(arm, D, device, epochs, bs, lr, d=128):
+def run_torch(arm, D, device, epochs, bs, lr, d=128, seed=0):
+    torch.manual_seed(seed); np.random.seed(seed)
     xl, xa, yb = D["xl"], D["xa"], D["y"]
     xl_all = torch.tensor(D["xl_all"], device=device)          # (Nall, d_local) for neighbour gather
+    xa_all = torch.tensor(D["xa"], device=device)              # (Nall, d_agg) for "full" neighbours
     step_all = torch.tensor(D["step_all"].astype(np.float32), device=device)  # (Nall,)
     nbr_idx = D["nbr_idx"]
+    nbr_full = "full" in arm
     model = NodeModel(xl.shape[1], xa.shape[1], d, arm, nbr_idx.shape[1]).to(device)
     pw = torch.tensor([(yb["train"] == 0).sum() / max(1, (yb["train"] == 1).sum())], device=device)
     lossfn = nn.BCEWithLogitsLoss(pos_weight=pw)
@@ -88,7 +94,10 @@ def run_torch(arm, D, device, epochs, bs, lr, d=128):
         ni = torch.tensor(nbr_idx[rows], device=device).long()  # (B,K), -1 pad
         nm = ni >= 0                                            # (B,K) True=real neighbour
         safe = ni.clamp(min=0)
-        nbx = xl_all[safe] * nm[..., None]                      # (B,K,d_local), padded->0
+        nbx = xl_all[safe]                                      # (B,K,d_local)
+        if nbr_full:
+            nbx = torch.cat([nbx, xa_all[safe]], dim=-1)        # (B,K,d_local+d_agg) matched receptive field
+        nbx = nbx * nm[..., None]                               # padded->0
         # dt = |timestep(node) - timestep(neighbour)| as a weak recency signal
         dt = (step_all[rows_t][:, None] - step_all[safe]).abs() * nm
         return bx, ba, nbx, dt, nm
@@ -122,7 +131,11 @@ def main():
     ap.add_argument("--batch-size", type=int, default=512)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--out", default="artifacts/elliptic_results.json")
+    ap.add_argument("--seeds", default="0", help="comma-sep seeds; torch arms averaged over them")
+    ap.add_argument("--arms", default="local,local+agg,local+meanpool,local+xseq,local+agg+xseq",
+                    help="comma-sep torch arms (incl. local+xseqfull / local+agg+xseqfull)")
     args = ap.parse_args()
+    seeds = [int(s) for s in args.seeds.split(",")]
 
     t0 = time.time(); device = torch.device(args.device)
     z = np.load(args.data)
@@ -143,11 +156,15 @@ def main():
         print(f"[elliptic] {name:16s} PR {res[name]['pr_auc']:.3f} ROC {res[name]['roc_auc']:.3f} "
               f"illicit-F1 {res[name]['illicit_f1']:.3f}")
 
-    # ---- torch arms ----
-    for arm in ["local", "local+agg", "local+meanpool", "local+xseq", "local+agg+xseq"]:
-        res[arm] = run_torch(arm, D, device, args.epochs, args.batch_size, args.lr)
-        print(f"[elliptic] {arm:16s} PR {res[arm]['pr_auc']:.3f} ROC {res[arm]['roc_auc']:.3f} "
-              f"illicit-F1 {res[arm]['illicit_f1']:.3f}")
+    # ---- torch arms (averaged over seeds) ----
+    for arm in args.arms.split(","):
+        runs = [run_torch(arm, D, device, args.epochs, args.batch_size, args.lr, seed=s) for s in seeds]
+        pr = np.array([r["pr_auc"] for r in runs]); roc = np.array([r["roc_auc"] for r in runs])
+        f1 = np.array([r["illicit_f1"] for r in runs])
+        res[arm] = {"pr_auc": float(pr.mean()), "pr_std": float(pr.std()),
+                    "roc_auc": float(roc.mean()), "illicit_f1": float(f1.mean()), "seeds": seeds}
+        print(f"[elliptic] {arm:18s} PR {pr.mean():.3f}±{pr.std():.3f} ROC {roc.mean():.3f} "
+              f"illicit-F1 {f1.mean():.3f}  (n={len(seeds)})")
 
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(json.dumps({"dataset": "elliptic", "test_base": float(y_all[te].mean()),
