@@ -105,7 +105,11 @@ class AsOfDateDataset(Dataset):
         mp = d / "merchant_mem.npz"
         self.mem = np.load(mp)["mem"] if mp.exists() else None
         np_ = d / "entity_nbr.npz"                     # cross-sequence neighbours (the "third transformer")
-        self.nbr = np.load(np_) if np_.exists() else None
+        if np_.exists():                               # extract arrays ONCE (indexing an NpzFile
+            nz = np.load(np_)                          # per __getitem__ re-decompresses the whole array)
+            self.nbr = {k: nz[k] for k in ("codes", "amount", "dt", "mask")}
+        else:
+            self.nbr = None
         self.F = self.codes.shape[1]
         self.L = max_seq_len
         seq = np.load(d / "seq_index.npz")
