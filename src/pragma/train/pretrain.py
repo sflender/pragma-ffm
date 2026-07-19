@@ -36,13 +36,34 @@ def mlm_loss(logits_list, targets):
     return total / ntok.clamp(min=1), ntok
 
 
-def mlm_step(model: MiniPragma, batch: dict, tcfg):
-    """One forward pass returning (loss, n_predicted_tokens, n_real_tokens)."""
+def aux_vel_loss(r, mem, mask, idx, dim, vel_head):
+    """MSE between the aux head's prediction from the record embedding and the (data-derived)
+    windowed-velocity target sliced out of the memory input, over real positions only. Forces
+    the cross-entity velocity signal into ``r`` so a frozen probe can read it (aligned SSL)."""
+    pred = vel_head(r)                                       # (B,L,dim)
+    tgt = mem[:, :, idx:idx + dim]                           # (B,L,dim)
+    m = mask[..., None].float()
+    return ((pred - tgt) ** 2 * m).sum() / m.sum().clamp(min=1) / max(1, dim)
+
+
+def mlm_step(model: MiniPragma, batch: dict, tcfg, aux_lambda: float = 0.0):
+    """One forward pass returning (loss, n_predicted_tokens, n_real_tokens).
+
+    When ``aux_lambda>0`` and the model has an aligned-SSL velocity head, adds
+    ``aux_lambda * MSE(velocity)`` to the MLM loss from the SAME forward pass.
+    """
     codes, times, mask = batch["codes"], batch["times"], batch["mask"]
     masked, targets = apply_mlm_mask(
         codes, mask, tcfg.mask_token_prob, tcfg.mask_event_prob, tcfg.mask_field_prob)
-    logits = model.mlm_logits(masked, times, mask, batch.get("amount"), mem=batch.get("mem"))
+    aux_on = aux_lambda > 0.0 and getattr(model, "vel_head", None) is not None and "mem" in batch
+    if aux_on:
+        logits, r = model.mlm_logits_and_rec(masked, times, mask, batch.get("amount"), mem=batch["mem"])
+    else:
+        logits = model.mlm_logits(masked, times, mask, batch.get("amount"), mem=batch.get("mem"))
     loss, ntok = mlm_loss(logits, targets)
+    if aux_on:
+        loss = loss + aux_lambda * aux_vel_loss(
+            r, batch["mem"], mask, model.cfg.aux_vel_idx, model.cfg.aux_vel_dim, model.vel_head)
     n_real = int(mask.sum().item()) * model.tok.F
     return loss, ntok, n_real
 
@@ -67,12 +88,19 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
           stride: int | None = None,
           batch_size: int | None = None, lr: float | None = None,
           num_workers: int = 0, dtype: str | None = None, use_mem: bool = False,
-          d_mem: int | None = None) -> Path:
+          d_mem: int | None = None, aux_vel_lambda: float = 0.0,
+          aux_vel_idx: int | None = None, aux_vel_dim: int | None = None) -> Path:
     preset = get_preset(preset_name)
     tcfg = preset.train
     preset.model.use_mem = use_mem
     if d_mem is not None:
         preset.model.d_mem = d_mem
+    if aux_vel_lambda > 0.0:
+        preset.model.use_aux_vel = True
+        if aux_vel_idx is not None:
+            preset.model.aux_vel_idx = aux_vel_idx
+        if aux_vel_dim is not None:
+            preset.model.aux_vel_dim = aux_vel_dim
     if max_steps is not None:
         tcfg.max_steps = max_steps
     if numeric_mode is not None:
@@ -122,7 +150,7 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
         for batch in loader:
             batch = to_device(batch, device, non_blocking=pin)
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_amp):
-                loss, ntok, _ = mlm_step(model, batch, tcfg)
+                loss, ntok, _ = mlm_step(model, batch, tcfg, aux_lambda=aux_vel_lambda)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), tcfg.grad_clip)
@@ -177,12 +205,20 @@ def main() -> None:
                     help="enable relational merchant-memory cross-attention (needs merchant_mem.npz)")
     ap.add_argument("--d-mem", type=int, default=None,
                     help="memory vector width (must match merchant_mem.npz; default preset=5)")
+    ap.add_argument("--aux-vel-lambda", type=float, default=0.0,
+                    help="aligned-SSL: weight of the windowed-velocity regression aux loss (0=off)")
+    ap.add_argument("--aux-vel-idx", type=int, default=None,
+                    help="first mem column that is a velocity target (default 5 = after the 5 base feats)")
+    ap.add_argument("--aux-vel-dim", type=int, default=None,
+                    help="#velocity target columns (= #--windows; default 2)")
     args = ap.parse_args()
     train(args.preset, args.data_dir, args.tokenizer, args.out_dir, args.device,
           args.max_steps, args.numeric_mode, args.tag, args.max_seq_len,
           args.pos_mode, args.seed, use_field_emb=not args.no_field_emb, stride=args.stride,
           batch_size=args.batch_size, lr=args.lr, num_workers=args.num_workers,
-          dtype=args.dtype, use_mem=args.mem, d_mem=args.d_mem)
+          dtype=args.dtype, use_mem=args.mem, d_mem=args.d_mem,
+          aux_vel_lambda=args.aux_vel_lambda, aux_vel_idx=args.aux_vel_idx,
+          aux_vel_dim=args.aux_vel_dim)
 
 
 if __name__ == "__main__":

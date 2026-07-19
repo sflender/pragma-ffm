@@ -11,8 +11,8 @@ import torch
 import torch.nn as nn
 
 from pragma.config import ModelConfig
-from pragma.model.encoder import (EventEncoder, FieldValueEmbedder, HistoryEncoder,
-                                  MemoryCrossAttention)
+from pragma.model.encoder import (CrossSequenceEncoder, EventEncoder, FieldValueEmbedder,
+                                  HistoryEncoder, MemoryCrossAttention)
 from pragma.model.tokenizer import Tokenizer
 
 
@@ -30,6 +30,10 @@ class MiniPragma(nn.Module):
         if cfg.use_mem:
             self.mem_norm = nn.LayerNorm(d)
             self.mem = MemoryCrossAttention(d, cfg.n_heads, cfg.d_mem, cfg.dropout)
+        if getattr(cfg, "use_xseq", False):
+            self.xseq = CrossSequenceEncoder(d, cfg.n_heads, cfg.xseq_layers, cfg.dropout)
+        if getattr(cfg, "use_aux_vel", False):
+            self.vel_head = nn.Linear(d, cfg.aux_vel_dim)
         self.mlm_norm = nn.LayerNorm(d)
         self.mlm_heads = nn.ModuleList([nn.Linear(d, f.vocab) for f in tok.fields])
         self.apply(self._init)
@@ -63,7 +67,24 @@ class MiniPragma(nn.Module):
     def record_embeddings(self, codes, times, mask, amount=None, causal=False, mem=None):
         return self.encode(codes, times, mask, amount, causal, mem)[0]
 
+    def embed_neighbors(self, nbr_codes, nbr_amount=None):
+        """Encode last-K neighbour events with the SHARED embedder+event encoder -> (B,K,d)."""
+        tokens = self.embedder(nbr_codes, nbr_amount)       # (B,K,F,d)
+        evt, _ = self.event(tokens)                         # (B,K,d)
+        return evt
+
+    def apply_xseq(self, target, nbr_codes, nbr_amount, nbr_dt, nbr_mask):
+        """Add the cross-sequence residual to a target-event embedding (B,d)."""
+        nbr = self.embed_neighbors(nbr_codes, nbr_amount)
+        return target + self.xseq(target, nbr, nbr_dt, nbr_mask)
+
     def mlm_logits(self, codes, times, mask, amount=None, mem=None):
+        return self.mlm_logits_and_rec(codes, times, mask, amount, mem)[0]
+
+    def mlm_logits_and_rec(self, codes, times, mask, amount=None, mem=None):
+        """Return (per-field MLM logits, record embeddings) from a single forward pass, so the
+        aligned-SSL aux head can read the same ``r`` the MLM heads are fused with."""
         r, field_out = self.encode(codes, times, mask, amount, mem=mem)
         fused = self.mlm_norm(field_out + r.unsqueeze(2))   # (B,L,F,d)
-        return [head(fused[:, :, j, :]) for j, head in enumerate(self.mlm_heads)]
+        logits = [head(fused[:, :, j, :]) for j, head in enumerate(self.mlm_heads)]
+        return logits, r

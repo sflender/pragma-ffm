@@ -60,6 +60,20 @@ class ModelConfig:
     use_mem: bool = False
     d_mem: int = 5                      # dims of the precomputed merchant-memory vector
 
+    # --- cross-sequence encoder (the "third transformer"): instead of a rank-1 precomputed
+    # memory summary, the target event cross-attends over its entity's last-K RAW prior events
+    # (encoded by the shared Event Encoder), so the model learns what to extract. Off by default. ---
+    use_xseq: bool = False
+    xseq_k: int = 16                    # #prior same-entity neighbour events per target
+    xseq_layers: int = 1               # depth of the transformer over the K neighbours
+
+    # --- aligned-SSL auxiliary head: regress a data-derived relational target (windowed
+    # velocity) from the record embedding during pretraining, so the (already-in-input)
+    # cross-entity signal is forced into the frozen representation. Off by default. ---
+    use_aux_vel: bool = False
+    aux_vel_dim: int = 2                # #velocity targets (= #--windows cols in merchant_mem)
+    aux_vel_idx: int = 5               # first mem column that is a velocity target
+
     # --- rope ---
     rope_theta: float = 10000.0
     # time is measured in *days* since sequence start; scaled before RoPE.

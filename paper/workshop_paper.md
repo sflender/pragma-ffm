@@ -1,4 +1,4 @@
-# When Do Financial Foundation Models Beat Gradient-Boosted Trees? Sequential vs. Relational Fraud and the Proxy-Alignment Gap
+# When Do Financial Foundation Models Beat Gradient-Boosted Trees? Sequential vs. Relational Fraud, the Proxy-Alignment Gap, and a Cross-Sequence Fix
 
 *Workshop submission (short paper). Laptop-scale study; single-seed unless noted.*
 
@@ -24,8 +24,16 @@ probe cannot read it — *even when it is handed to the model as input*. We conn
 generative recommender FMs (HSTU, OneRec), which avoid the gap precisely because their
 pretraining objective *is* the task and they train end-to-end. Aligning the objective and
 unfreezing the backbone *partially* recovers the signal (≈2× the frozen probe) but a rank-1
-memory does not close the gap to the GBDT — the architecture, not just the training recipe, still
-matters.
+memory does not close the gap to the GBDT. Finally, we **close the gap architecturally**: a
+**cross-sequence encoder** that attends over an entity's last-K *raw* prior events — rather than a
+rank-1 precomputed summary — recovers the relational signal (PR-AUC **0.41**, past the 0.36
+velocity ceiling and ~78% of the full-feature GBDT), and does so **even on a frozen per-sequence
+backbone** (0.36), making relational capability a *bolt-on* module. Ablating the two candidate
+fixes on ground truth, **architecture dominates objective-alignment** (0.41 vs 0.12): the training
+recipe helps, but a rich cross-sequence encoder is what actually closes the gap. On real graph
+fraud (Elliptic) the advantage is **bounded** — the encoder does not beat rich hand-engineered
+neighbour aggregates and adds little on top — locating its value where the available neighbour
+summary is *lossy* and the relational signal *transient*.
 
 ## 1. Introduction
 
@@ -60,7 +68,17 @@ fraud — and when does it not?** Our contributions:
    (HSTU, OneRec), which sidestep the gap because their objective *is* the task and they are not
    frozen, and confirm the fix by aligning the objective and unfreezing.
 
-All code, the synthetic generator, and per-experiment result files are released.
+4. **Closing the gap: cross-sequence encoding beats objective-alignment (§8).** On the same
+   controlled benchmark we ablate the two candidate fixes. A **cross-sequence encoder** — the
+   target event cross-attends over its entity's last-K *raw* prior events, learned end-to-end —
+   recovers the relational signal (PR-AUC 0.41, past the velocity ceiling), and remarkably keeps
+   most of it with the per-sequence backbone **frozen** (0.36); relational capability is a bolt-on
+   module. An aligned self-supervised objective (velocity regression) closes only part of the
+   frozen gap (0.06→0.12) and only when the signal is present in the input. Architecture is the
+   decisive lever.
+
+All code, the synthetic generator, the cross-sequence encoder, and per-experiment result files
+are released.
 
 ## 2. Background and related work
 
@@ -108,7 +126,8 @@ instead concatenates the same features to the frozen embedding at the supervised
 
 **Datasets.** (i) **IBM TabFormer** — 24.4M synthetic card transactions, per-user injected fraud
 (0.12%); (ii) **IEEE-CIS/Vesta** — 590K real card-not-present transactions (3.5% fraud); (iii) a
-**controlled synthetic generator** (§6) with tunable fraud structure.
+**controlled synthetic generator** (§6) with tunable fraud structure; (iv) **Elliptic** (§8) —
+203K Bitcoin transaction nodes / 234K payment edges with real AML labels, for graph external validity.
 
 ## 4. FFM vs GBDT: a dataset-dependent advantage
 
@@ -238,7 +257,74 @@ first suspect *and* an incomplete fix: closing the gap needs a richer **multi-en
 cross-sequence** encoder (§8), not just an aligned objective over a compressed memory. The
 direction is confirmed; the magnitude says the *architecture* still matters.
 
-## 8. Limitations
+## 8. Closing the gap: cross-sequence encoding vs. aligned objective
+
+S2 leaves two candidate fixes for the rank-1 memory's shortfall. We ablate both on the synthetic
+`relational` data (`small`), against two GBDT ceilings: **velocity-only** (the single cross-entity
+feature, PR-AUC 0.36) and **full merchant features** (velocity + popularity + label-derived prior
+fraud rate, **0.53**) — the latter a looser but more honest upper bound.
+
+**(1) A cross-sequence encoder — the "third transformer."** Instead of a rank-1 precomputed
+summary, the target event cross-attends over its entity's **last-K raw prior events** (across all
+cards, strictly as-of-date), each encoded by the shared event encoder, with a learned recency
+signal and a shallow transformer over the K neighbours. The model *learns* the relational pattern
+from the concurrent cross-card activity rather than reading a hand-designed feature.
+
+**(2) An aligned self-supervised objective.** During MLM pretraining, an auxiliary head regresses
+the (data-derived) windowed-velocity target — already present in the memory *input* — from the
+record embedding, forcing the cross-entity signal into the frozen representation. The backbone is
+then read by the usual frozen linear probe.
+
+| arm | PR-AUC | ROC-AUC |
+|---|---|---|
+| per-sequence FFM, no memory (control) | 0.04 | 0.58 |
+| rank-1 memory-CSA, end-to-end (S2) | 0.08 | 0.68 |
+| memory-CSA, pure MLM, frozen probe | 0.06 | 0.62 |
+| **+ velocity-SSL aux, frozen probe** (aligned objective) | **0.12** | 0.76 |
+| velocity-SSL aux, *no memory input* (negative control) | 0.04 | 0.58 |
+| **cross-sequence encoder, end-to-end** | **0.41** | 0.89 |
+| **cross-sequence encoder, frozen backbone** | **0.36** | 0.89 |
+| — LightGBM, velocity-only / full features (ceilings) | 0.36 / **0.53** | 0.83 / 0.91 |
+
+**The fix is architectural.** The cross-sequence encoder reaches **0.41** — **5× the rank-1
+memory** and **11× the per-sequence control** — *exceeding* the velocity-only ceiling and reaching
+~78% of the full-feature GBDT, despite having no access to labels or the prior-fraud-rate feature:
+seeing the raw neighbour events lets it learn richer burst structure than any single velocity
+statistic encodes. Strikingly, with the **entire per-sequence backbone frozen** and only the
+cross-sequence module + head trained, it still recovers **0.36** — the relational capability is a
+**bolt-on**: a deployed frozen FFM gains it from an add-on module, no re-pretraining.
+
+**Objective-alignment helps, but is the smaller lever.** Adding the velocity-SSL aux ≈doubles the
+frozen probe (0.06→0.12, ROC 0.62→0.76): a *causal* demonstration of the proxy-alignment gap —
+pure MLM discards the signal it has no reason to reconstruct; rewarding it in the objective
+preserves it, without unfreezing. But 0.12 ≪ 0.41, and the negative control (aux with *no* memory
+input) stays at base (0.04) — so aligning the objective needs *both* the signal present in the
+input and a rich enough pathway; on a rank-1 memory it cannot match the architecture.
+
+**Full arc.** Per-sequence blindness (0.04) → rank-1 memory barely helps / frozen proxy-alignment
+gap (0.06) → aligned objective partially closes it (0.12) → cross-sequence architecture recovers
+the signal (0.41), even frozen-backbone (0.36). The controlled benchmark does not just *expose*
+the relational gap in the frozen-FFM recipe — it **localises and closes it**, and separates the
+two fixes cleanly enough to show architecture dominates objective-alignment.
+
+**External validity (Elliptic): the advantage is bounded.** We port the same cross-sequence
+encoder to the **Elliptic Bitcoin** dataset (203K transaction nodes, 234K payment edges,
+illicit-vs-licit AML labels; standard temporal split), where "cross-sequence" becomes cross-node
+graph attention and the 165 features split into 93 *local* and 72 *aggregated* (engineered
+one-hop neighbour) features — a natural map to blind / rank-1-summary / raw-neighbour. Holding a
+shared MLP encoder fixed, attention over raw neighbours (`+xseq`, illicit PR-AUC ≈0.59–0.63)
+**beats no-neighbours (≈0.55–0.58) and naïve mean-pooling but does *not* beat the engineered
+aggregates (≈0.68–0.69), and adds essentially nothing on top of them** (`+agg+xseq` ≈ `+agg`). The
+mechanism still extracts relational signal — it is simply *redundant* here. This does not overturn
+the synthetic result; it **bounds** it: the cross-sequence encoder's advantage scales with how
+**lossy** the available neighbour summary is (rank-1 velocity vs. 72 multi-statistic features) and
+how **transient** the signal is (a compromise burst vs. static laundering structure). Where a rich
+engineered summary already exists and the signal is stationary — and, consistent with §4, where
+GBDTs dominate the absolute numbers (LightGBM 0.79–0.82 vs. the MLP family) — raw-neighbour
+attention is not a free win. (Single-seed, weak-base, K≤16 sampled neighbours; a matched-receptive-field,
+multi-seed study is needed for a hard real-data verdict. Details: `ELLIPTIC.md`.)
+
+## 9. Limitations
 
 Laptop scale (≤14M parameters) and, unless noted, single seed; PR-AUC has run-to-run variance,
 and training-seed variance is larger — we report effects that clear it and flag those that do
@@ -246,28 +332,45 @@ not. On IEEE we deliberately drop the ~400 anonymised Vesta features to match in
 models, which places both models far below the leaderboard frontier; our claims are about
 *sequence-encoder-vs-trees on matched fields*, not absolute capability. The synthetic benchmark
 isolates one relational mechanism (compromised-merchant velocity); real fraud is richer
-(multi-entity rings, delayed labels). Memory-CSA is a rank-1 (single summary vector) compression
-of a fuller cross-sequence encoder; a multi-entity, last-K "third-transformer" is future work.
+(multi-entity rings, delayed labels). Our one real-relational test (Elliptic, §8) is a first pass:
+single-seed with large run-to-run variance, a weak shared MLP base, and K≤16 sampled neighbours
+with local-only features — enough to bound the claim (raw attention did not beat rich engineered
+aggregates) but not to settle whether a matched-receptive-field, multi-seed study would. The
+cross-sequence encoder and its `--freeze-backbone`
+variant train the cross-sequence module and head on labels — "frozen" refers to the *per-sequence
+backbone*, not a pure linear probe; and it is single-entity (merchant), where the synthetic signal
+lives. Finally, the cross-sequence encoder exceeds the *velocity-only* ceiling because it accesses
+raw neighbour events (richer than one hand-designed feature), so 0.36 is a feature-specific
+reference and the full-feature 0.53 is the honest upper bound.
 
-## 9. Conclusion
+## 10. Conclusion
 
 An MLM-pretrained, frozen-probe financial foundation model beats gradient-boosted trees when
 fraud is sequential and aligned with its objective, and loses when fraud is static or relational.
-Adding cross-entity memory *architecturally* does not close the relational gap — we show, with a
-ground-truth controlled benchmark, that a frozen MLM backbone cannot extract a cross-entity
+Adding cross-entity memory as a *rank-1 summary* does not close the relational gap — we show, with
+a ground-truth controlled benchmark, that a frozen MLM backbone cannot extract a cross-entity
 feature even when it is handed to the model, because the pretraining objective never rewards
-preserving it (the proxy-alignment gap). The path forward is the one production recommender
-foundation models already take: align the pretraining objective with the task and train
-end-to-end. Fraud is the harder case because its decisive relational signal is transient and
-its labels are delayed — but the diagnosis, and the fix, are now precise.
+preserving it (the proxy-alignment gap). We then close the gap: a **cross-sequence encoder** that
+attends over an entity's last-K raw prior events recovers the relational signal (0.41, past the
+velocity ceiling), and keeps most of it as a **bolt-on to a frozen backbone** (0.36); ablating the
+two candidate fixes, this architecture dominates objective-alignment (0.41 vs 0.12). The path
+forward for relational fraud is thus not merely the recipe production recommenders use (aligned
+objective, end-to-end) but an **architecture that reads concurrent cross-sequence activity** — and
+it can be added to an existing frozen FFM without re-pretraining. Fraud remains the harder case
+because its decisive relational signal is transient and its labels are delayed, and real-data and
+multi-entity validation are the next steps — but the diagnosis, and the fix, are now precise and
+demonstrated.
 
 ## Reproducibility
 
 Model, tokenizer, datasets adapters (`pragma.data.schema`, `pragma.data.ieee_cis`), the
-controlled generator (`scripts/gen_synth_relational.py`), the memory builder, probes, and
+controlled generator (`scripts/gen_synth_relational.py`), the memory builder, the cross-sequence
+neighbour builder (`scripts/build_entity_neighbors.py`) and encoder (`--xseq` /
+`--freeze-backbone`), the aligned-SSL aux head (`pretrain.py --aux-vel-lambda`), probes, and
 per-experiment result JSONs are released. A golden test freezes the TabFormer tokenizer so all
-reproductions are bit-exact. Detailed logs: `EXPERIMENTS.md`, `EXPERIMENTS_IEEE.md`,
-`SYNTH_RELATIONAL.md`, `RELATIONAL_PRAGMA.md`.
+reproductions are bit-exact. The Elliptic adapter (`scripts/build_elliptic.py`) and node arms
+(`scripts/elliptic_relational.py`) reproduce the external-validity test. Detailed logs:
+`EXPERIMENTS.md`, `EXPERIMENTS_IEEE.md`, `SYNTH_RELATIONAL.md`, `ELLIPTIC.md`, `RELATIONAL_PRAGMA.md`.
 
 ## References (selected)
 

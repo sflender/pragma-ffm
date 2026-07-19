@@ -228,6 +228,71 @@ class MemoryCrossAttention(nn.Module):
         return self.proj(out.transpose(1, 2).reshape(B, L, d))
 
 
+class CrossSequenceEncoder(nn.Module):
+    """The "third transformer": the target event cross-attends over its ENTITY's last-K raw
+    prior events (across all cards), encoded by the shared Event Encoder.
+
+    Where ``MemoryCrossAttention`` reads a rank-1, hand-designed summary vector per event
+    (popularity, prior fraud rate, windowed velocity...), this sees the actual K neighbour
+    events and lets the model *learn* the cross-card pattern (e.g. a velocity burst) rather
+    than trusting a precomputed feature. A learned recency (log-dt) signal is added to each
+    neighbour, an optional shallow transformer mixes the K neighbours, and the target queries
+    them. Returns a residual to add to the target's record embedding. All masks are finite
+    (-1e4) so all-padded rows (targets with no prior neighbour) stay NaN-free; their output is
+    zeroed explicitly.
+    """
+
+    def __init__(self, d_model: int, n_heads: int, n_layers: int, dropout: float):
+        super().__init__()
+        assert d_model % n_heads == 0
+        self.h, self.dh = n_heads, d_model // n_heads
+        self.drop = dropout
+        self.dt_mlp = nn.Sequential(nn.Linear(1, d_model), nn.GELU(), nn.Linear(d_model, d_model))
+        # shallow self-attention stack over the K neighbours (finite-mask SDPA, NaN-safe)
+        self.layers = nn.ModuleList()
+        for _ in range(max(0, n_layers)):
+            self.layers.append(nn.ModuleDict({
+                "n1": nn.LayerNorm(d_model), "qkv": nn.Linear(d_model, 3 * d_model),
+                "op": nn.Linear(d_model, d_model), "n2": nn.LayerNorm(d_model),
+                "ff": nn.Sequential(nn.Linear(d_model, 4 * d_model), nn.GELU(),
+                                    nn.Linear(4 * d_model, d_model))}))
+        # target -> neighbours cross-attention
+        self.q = nn.Linear(d_model, d_model)
+        self.kv = nn.Linear(d_model, 2 * d_model)
+        self.proj = nn.Linear(d_model, d_model)
+        self.norm = nn.LayerNorm(d_model)
+
+    def _self_attn(self, x, amask):                          # x:(B,K,d) amask:(B,1,1,K)
+        B, K, d = x.shape
+        for ly in self.layers:
+            h = ly["n1"](x)
+            qkv = ly["qkv"](h).reshape(B, K, 3, self.h, self.dh).permute(2, 0, 3, 1, 4)
+            q, k, v = qkv[0], qkv[1], qkv[2]                 # (B,H,K,dh)
+            o = F.scaled_dot_product_attention(
+                q, k, v, attn_mask=amask, dropout_p=self.drop if self.training else 0.0)
+            x = x + ly["op"](o.transpose(1, 2).reshape(B, K, d))
+            x = x + ly["ff"](ly["n2"](x))
+        return x
+
+    def forward(self, target, nbr, dt, nbr_mask):
+        # target:(B,d) record emb of target event; nbr:(B,K,d) encoded neighbour events;
+        # dt:(B,K) seconds from neighbour to target (>=0); nbr_mask:(B,K) True=real.
+        B, K, d = nbr.shape
+        logdt = torch.log1p(dt.clamp(min=0.0))[..., None].to(nbr.dtype)   # (B,K,1)
+        x = nbr + self.dt_mlp(logdt)
+        amask = torch.zeros(B, 1, 1, K, device=x.device, dtype=x.dtype)
+        amask = amask.masked_fill(~nbr_mask[:, None, None, :], -1e4)
+        x = self._self_attn(x, amask)
+        q = self.q(target).reshape(B, self.h, 1, self.dh)
+        kv = self.kv(x).reshape(B, K, 2, self.h, self.dh).permute(2, 0, 3, 1, 4)
+        k, v = kv[0], kv[1]                                              # (B,H,K,dh)
+        out = F.scaled_dot_product_attention(
+            q, k, v, attn_mask=amask, dropout_p=self.drop if self.training else 0.0)
+        out = self.proj(out.reshape(B, d))
+        has = nbr_mask.any(dim=1, keepdim=True)                         # (B,1) targets w/ >=1 nbr
+        return torch.where(has, self.norm(out), torch.zeros_like(out))
+
+
 class HistoryLayer(nn.Module):
     def __init__(self, d_model, n_heads, d_ff, dropout, theta):
         super().__init__()

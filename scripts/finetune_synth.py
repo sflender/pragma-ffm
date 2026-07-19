@@ -35,6 +35,12 @@ def main():
     ap.add_argument("--preset", default="small")
     ap.add_argument("--mem", action="store_true")
     ap.add_argument("--d-mem", type=int, default=7)
+    ap.add_argument("--xseq", action="store_true",
+                    help="cross-sequence encoder (the 'third transformer'); needs entity_nbr.npz")
+    ap.add_argument("--xseq-layers", type=int, default=1)
+    ap.add_argument("--freeze-backbone", action="store_true",
+                    help="freeze the per-sequence backbone; train only the xseq encoder + head "
+                         "(does a relational encoder on FROZEN per-sequence embeddings recover signal?)")
     ap.add_argument("--epochs", type=int, default=8)
     ap.add_argument("--batch-size", type=int, default=128)
     ap.add_argument("--lr", type=float, default=3e-4)
@@ -50,6 +56,8 @@ def main():
     preset = get_preset(args.preset)
     preset.model.numeric_mode = "bucket"; preset.model.use_mem = args.mem
     if args.mem: preset.model.d_mem = args.d_mem
+    preset.model.use_xseq = args.xseq
+    if args.xseq: preset.model.xseq_layers = args.xseq_layers
     L = preset.model.max_seq_len
     model = MiniPragma(tok, preset.model).to(device)
     head = nn.Linear(preset.model.d_model, 1).to(device)
@@ -61,12 +69,21 @@ def main():
     tr_ds, te_ds = AsOfDateDataset(args.data_dir, tr, L), AsOfDateDataset(args.data_dir, te, L)
     # class weight for the BCE (fraud is rare)
     ytr_all = np.array([tr_ds[i]["label"] for i in range(len(tr_ds))]) if False else None
-    opt = torch.optim.AdamW(list(model.parameters()) + list(head.parameters()), lr=args.lr, weight_decay=0.01)
+    if args.freeze_backbone:
+        # freeze everything except the cross-sequence encoder (+ head); train only the relational part
+        for n, p in model.named_parameters():
+            if not n.startswith("xseq."):
+                p.requires_grad_(False)
+    trainable = [p for p in model.parameters() if p.requires_grad] + list(head.parameters())
+    opt = torch.optim.AdamW(trainable, lr=args.lr, weight_decay=0.01)
 
     def fwd(b):
         r = model.record_embeddings(b["codes"], b["times"], b["mask"], b["amount"],
                                     causal=False, mem=b.get("mem"))
-        return head(r[:, -1].float()).squeeze(-1)
+        rt = r[:, -1]                                       # target event (last position)
+        if args.xseq:
+            rt = model.apply_xseq(rt, b["nbr_codes"], b["nbr_amount"], b["nbr_dt"], b["nbr_mask"])
+        return head(rt.float()).squeeze(-1)
 
     # estimate pos_weight from a pass over train labels
     pw = None
@@ -94,7 +111,9 @@ def main():
                 s = torch.sigmoid(fwd(b))
             scores.append(s.float().cpu().numpy()); labs.append(b["label"].cpu().numpy())
     s = np.concatenate(scores); y = np.concatenate(labs)
-    res = {"arm": f"finetune_{'mem' if args.mem else 'nomem'}", "data_dir": args.data_dir,
+    arm = "xseq" if args.xseq else ("mem" if args.mem else "nomem")
+    if args.freeze_backbone: arm += "_frozen"
+    res = {"arm": f"finetune_{arm}", "data_dir": args.data_dir,
            "n": int(len(y)), "base": float(y.mean()), "epochs": args.epochs,
            "pr_auc": float(average_precision_score(y, s)), "roc_auc": float(roc_auc_score(y, s))}
     print(f"[ft] RESULT mem={args.mem} PR {res['pr_auc']:.3f} ROC {res['roc_auc']:.3f} base {res['base']:.4f}")
