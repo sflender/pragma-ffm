@@ -30,7 +30,10 @@ rank-1 precomputed summary — recovers the relational signal (PR-AUC **0.41**, 
 velocity ceiling and ~78% of the full-feature GBDT), and does so **even on a frozen per-sequence
 backbone** (0.36), making relational capability a *bolt-on* module. Ablating the two candidate
 fixes on ground truth, **architecture dominates objective-alignment** (0.41 vs 0.12): the training
-recipe helps, but a rich cross-sequence encoder is what actually closes the gap.
+recipe helps, but a rich cross-sequence encoder is what actually closes the gap. On real graph
+fraud (Elliptic) the advantage is **bounded** — the encoder does not beat rich hand-engineered
+neighbour aggregates and adds little on top — locating its value where the available neighbour
+summary is *lossy* and the relational signal *transient*.
 
 ## 1. Introduction
 
@@ -123,7 +126,8 @@ instead concatenates the same features to the frozen embedding at the supervised
 
 **Datasets.** (i) **IBM TabFormer** — 24.4M synthetic card transactions, per-user injected fraud
 (0.12%); (ii) **IEEE-CIS/Vesta** — 590K real card-not-present transactions (3.5% fraud); (iii) a
-**controlled synthetic generator** (§6) with tunable fraud structure.
+**controlled synthetic generator** (§6) with tunable fraud structure; (iv) **Elliptic** (§8) —
+203K Bitcoin transaction nodes / 234K payment edges with real AML labels, for graph external validity.
 
 ## 4. FFM vs GBDT: a dataset-dependent advantage
 
@@ -303,6 +307,23 @@ the signal (0.41), even frozen-backbone (0.36). The controlled benchmark does no
 the relational gap in the frozen-FFM recipe — it **localises and closes it**, and separates the
 two fixes cleanly enough to show architecture dominates objective-alignment.
 
+**External validity (Elliptic): the advantage is bounded.** We port the same cross-sequence
+encoder to the **Elliptic Bitcoin** dataset (203K transaction nodes, 234K payment edges,
+illicit-vs-licit AML labels; standard temporal split), where "cross-sequence" becomes cross-node
+graph attention and the 165 features split into 93 *local* and 72 *aggregated* (engineered
+one-hop neighbour) features — a natural map to blind / rank-1-summary / raw-neighbour. Holding a
+shared MLP encoder fixed, attention over raw neighbours (`+xseq`, illicit PR-AUC ≈0.59–0.63)
+**beats no-neighbours (≈0.55–0.58) and naïve mean-pooling but does *not* beat the engineered
+aggregates (≈0.68–0.69), and adds essentially nothing on top of them** (`+agg+xseq` ≈ `+agg`). The
+mechanism still extracts relational signal — it is simply *redundant* here. This does not overturn
+the synthetic result; it **bounds** it: the cross-sequence encoder's advantage scales with how
+**lossy** the available neighbour summary is (rank-1 velocity vs. 72 multi-statistic features) and
+how **transient** the signal is (a compromise burst vs. static laundering structure). Where a rich
+engineered summary already exists and the signal is stationary — and, consistent with §4, where
+GBDTs dominate the absolute numbers (LightGBM 0.79–0.82 vs. the MLP family) — raw-neighbour
+attention is not a free win. (Single-seed, weak-base, K≤16 sampled neighbours; a matched-receptive-field,
+multi-seed study is needed for a hard real-data verdict. Details: `ELLIPTIC.md`.)
+
 ## 9. Limitations
 
 Laptop scale (≤14M parameters) and, unless noted, single seed; PR-AUC has run-to-run variance,
@@ -311,8 +332,11 @@ not. On IEEE we deliberately drop the ~400 anonymised Vesta features to match in
 models, which places both models far below the leaderboard frontier; our claims are about
 *sequence-encoder-vs-trees on matched fields*, not absolute capability. The synthetic benchmark
 isolates one relational mechanism (compromised-merchant velocity); real fraud is richer
-(multi-entity rings, delayed labels), and the cross-sequence result awaits external validation on
-a real relational dataset (e.g. Elliptic). The cross-sequence encoder and its `--freeze-backbone`
+(multi-entity rings, delayed labels). Our one real-relational test (Elliptic, §8) is a first pass:
+single-seed with large run-to-run variance, a weak shared MLP base, and K≤16 sampled neighbours
+with local-only features — enough to bound the claim (raw attention did not beat rich engineered
+aggregates) but not to settle whether a matched-receptive-field, multi-seed study would. The
+cross-sequence encoder and its `--freeze-backbone`
 variant train the cross-sequence module and head on labels — "frozen" refers to the *per-sequence
 backbone*, not a pure linear probe; and it is single-entity (merchant), where the synthetic signal
 lives. Finally, the cross-sequence encoder exceeds the *velocity-only* ceiling because it accesses
@@ -344,8 +368,9 @@ controlled generator (`scripts/gen_synth_relational.py`), the memory builder, th
 neighbour builder (`scripts/build_entity_neighbors.py`) and encoder (`--xseq` /
 `--freeze-backbone`), the aligned-SSL aux head (`pretrain.py --aux-vel-lambda`), probes, and
 per-experiment result JSONs are released. A golden test freezes the TabFormer tokenizer so all
-reproductions are bit-exact. Detailed logs: `EXPERIMENTS.md`, `EXPERIMENTS_IEEE.md`,
-`SYNTH_RELATIONAL.md`, `RELATIONAL_PRAGMA.md`.
+reproductions are bit-exact. The Elliptic adapter (`scripts/build_elliptic.py`) and node arms
+(`scripts/elliptic_relational.py`) reproduce the external-validity test. Detailed logs:
+`EXPERIMENTS.md`, `EXPERIMENTS_IEEE.md`, `SYNTH_RELATIONAL.md`, `ELLIPTIC.md`, `RELATIONAL_PRAGMA.md`.
 
 ## References (selected)
 

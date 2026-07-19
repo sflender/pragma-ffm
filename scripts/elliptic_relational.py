@@ -45,11 +45,11 @@ class NodeModel(nn.Module):
         self.arm = arm
         self.enc = nn.Sequential(nn.Linear(d_local, d), nn.GELU(), nn.LayerNorm(d),
                                  nn.Linear(d, d), nn.GELU())
-        if arm == "local+agg":
+        if arm in ("local+agg", "local+agg+xseq"):
             self.agg_proj = nn.Sequential(nn.Linear(d_agg, d), nn.GELU(), nn.LayerNorm(d))
-        if arm in ("local+meanpool", "local+xseq"):
+        if arm in ("local+meanpool", "local+xseq", "local+agg+xseq"):
             self.nbr_enc = nn.Sequential(nn.Linear(d_local, d), nn.GELU(), nn.LayerNorm(d))
-        if arm == "local+xseq":
+        if arm in ("local+xseq", "local+agg+xseq"):
             self.xseq = CrossSequenceEncoder(d, n_heads=4, n_layers=1, dropout=0.1)
         self.head = nn.Linear(d, 1)
 
@@ -63,6 +63,10 @@ class NodeModel(nn.Module):
             r = r + (ne * m).sum(1) / m.sum(1).clamp(min=1)
         elif self.arm == "local+xseq":
             ne = self.nbr_enc(nbr_x)                            # (B,K,d)
+            r = r + self.xseq(r, ne, nbr_dt, nbr_mask)
+        elif self.arm == "local+agg+xseq":                     # engineered summary AND raw attention
+            r = r + self.agg_proj(x_agg)
+            ne = self.nbr_enc(nbr_x)
             r = r + self.xseq(r, ne, nbr_dt, nbr_mask)
         return self.head(r).squeeze(-1)
 
@@ -140,7 +144,7 @@ def main():
               f"illicit-F1 {res[name]['illicit_f1']:.3f}")
 
     # ---- torch arms ----
-    for arm in ["local", "local+agg", "local+meanpool", "local+xseq"]:
+    for arm in ["local", "local+agg", "local+meanpool", "local+xseq", "local+agg+xseq"]:
         res[arm] = run_torch(arm, D, device, args.epochs, args.batch_size, args.lr)
         print(f"[elliptic] {arm:16s} PR {res[arm]['pr_auc']:.3f} ROC {res[arm]['roc_auc']:.3f} "
               f"illicit-F1 {res[arm]['illicit_f1']:.3f}")
