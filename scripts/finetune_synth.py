@@ -38,6 +38,11 @@ def main():
     ap.add_argument("--xseq", action="store_true",
                     help="cross-sequence encoder (the 'third transformer'); needs entity_nbr.npz")
     ap.add_argument("--xseq-layers", type=int, default=1)
+    ap.add_argument("--xseq-count", action="store_true",
+                    help="count-aware cross-sequence encoder: add a log-velocity magnitude readout "
+                         "(from the mem velocity cols) inside xseq. Needs --mem + entity_nbr.npz.")
+    ap.add_argument("--count-idx", type=int, default=5, help="first mem col that is a velocity target")
+    ap.add_argument("--count-dim", type=int, default=2, help="#velocity cols (= #--windows)")
     ap.add_argument("--freeze-backbone", action="store_true",
                     help="freeze the per-sequence backbone; train only the xseq encoder + head "
                          "(does a relational encoder on FROZEN per-sequence embeddings recover signal?)")
@@ -48,16 +53,18 @@ def main():
     ap.add_argument("--device", default="auto")
     ap.add_argument("--dtype", default="bf16")
     ap.add_argument("--out", default="artifacts/finetune_synth.json")
+    ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
     t0 = time.time()
-    device = get_device(args.device); seed_everything(0)
+    device = get_device(args.device); seed_everything(args.seed)
     tok = Tokenizer.load(args.tokenizer)
     preset = get_preset(args.preset)
     preset.model.numeric_mode = "bucket"; preset.model.use_mem = args.mem
     if args.mem: preset.model.d_mem = args.d_mem
     preset.model.use_xseq = args.xseq
     if args.xseq: preset.model.xseq_layers = args.xseq_layers
+    if args.xseq_count: preset.model.xseq_count_dim = args.count_dim
     L = preset.model.max_seq_len
     model = MiniPragma(tok, preset.model).to(device)
     head = nn.Linear(preset.model.d_model, 1).to(device)
@@ -82,7 +89,10 @@ def main():
                                     causal=False, mem=b.get("mem"))
         rt = r[:, -1]                                       # target event (last position)
         if args.xseq:
-            rt = model.apply_xseq(rt, b["nbr_codes"], b["nbr_amount"], b["nbr_dt"], b["nbr_mask"])
+            count = None
+            if args.xseq_count:                             # target's log-velocity (magnitude path)
+                count = b["mem"][:, -1, args.count_idx:args.count_idx + args.count_dim]
+            rt = model.apply_xseq(rt, b["nbr_codes"], b["nbr_amount"], b["nbr_dt"], b["nbr_mask"], count=count)
         return head(rt.float()).squeeze(-1)
 
     # estimate pos_weight from a pass over train labels
@@ -112,8 +122,9 @@ def main():
             scores.append(s.float().cpu().numpy()); labs.append(b["label"].cpu().numpy())
     s = np.concatenate(scores); y = np.concatenate(labs)
     arm = "xseq" if args.xseq else ("mem" if args.mem else "nomem")
+    if args.xseq and args.xseq_count: arm = "xseqcount"
     if args.freeze_backbone: arm += "_frozen"
-    res = {"arm": f"finetune_{arm}", "data_dir": args.data_dir,
+    res = {"arm": f"finetune_{arm}", "seed": args.seed, "data_dir": args.data_dir,
            "n": int(len(y)), "base": float(y.mean()), "epochs": args.epochs,
            "pr_auc": float(average_precision_score(y, s)), "roc_auc": float(roc_auc_score(y, s))}
     print(f"[ft] RESULT mem={args.mem} PR {res['pr_auc']:.3f} ROC {res['roc_auc']:.3f} base {res['base']:.4f}")

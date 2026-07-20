@@ -31,7 +31,8 @@ class MiniPragma(nn.Module):
             self.mem_norm = nn.LayerNorm(d)
             self.mem = MemoryCrossAttention(d, cfg.n_heads, cfg.d_mem, cfg.dropout)
         if getattr(cfg, "use_xseq", False):
-            self.xseq = CrossSequenceEncoder(d, cfg.n_heads, cfg.xseq_layers, cfg.dropout)
+            self.xseq = CrossSequenceEncoder(d, cfg.n_heads, cfg.xseq_layers, cfg.dropout,
+                                             count_dim=getattr(cfg, "xseq_count_dim", 0))
         if getattr(cfg, "use_aux_vel", False):
             self.vel_head = nn.Linear(d, cfg.aux_vel_dim)
         self.mlm_norm = nn.LayerNorm(d)
@@ -73,10 +74,11 @@ class MiniPragma(nn.Module):
         evt, _ = self.event(tokens)                         # (B,K,d)
         return evt
 
-    def apply_xseq(self, target, nbr_codes, nbr_amount, nbr_dt, nbr_mask):
-        """Add the cross-sequence residual to a target-event embedding (B,d)."""
+    def apply_xseq(self, target, nbr_codes, nbr_amount, nbr_dt, nbr_mask, count=None):
+        """Add the cross-sequence residual to a target-event embedding (B,d). ``count`` is an
+        optional precomputed magnitude signal (log-velocity) for the count-aware readout."""
         nbr = self.embed_neighbors(nbr_codes, nbr_amount)
-        return target + self.xseq(target, nbr, nbr_dt, nbr_mask)
+        return target + self.xseq(target, nbr, nbr_dt, nbr_mask, count=count)
 
     def mlm_logits(self, codes, times, mask, amount=None, mem=None):
         return self.mlm_logits_and_rec(codes, times, mask, amount, mem)[0]

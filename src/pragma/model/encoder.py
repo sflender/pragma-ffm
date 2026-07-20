@@ -242,12 +242,19 @@ class CrossSequenceEncoder(nn.Module):
     zeroed explicitly.
     """
 
-    def __init__(self, d_model: int, n_heads: int, n_layers: int, dropout: float):
+    def __init__(self, d_model: int, n_heads: int, n_layers: int, dropout: float, count_dim: int = 0):
         super().__init__()
         assert d_model % n_heads == 0
         self.h, self.dh = n_heads, d_model // n_heads
         self.drop = dropout
         self.dt_mlp = nn.Sequential(nn.Linear(1, d_model), nn.GELU(), nn.Linear(d_model, d_model))
+        # count-aware path: an always-on readout of a precomputed magnitude signal (e.g. the
+        # entity's windowed velocity / log-count) that the bounded-K raw-neighbour window cannot
+        # represent. Pattern via attention (below) + magnitude via this scalar readout, in one module.
+        self.count_dim = count_dim
+        if count_dim > 0:
+            self.count_proj = nn.Sequential(nn.Linear(count_dim, d_model), nn.GELU(),
+                                            nn.LayerNorm(d_model))
         # shallow self-attention stack over the K neighbours (finite-mask SDPA, NaN-safe)
         self.layers = nn.ModuleList()
         for _ in range(max(0, n_layers)):
@@ -274,9 +281,10 @@ class CrossSequenceEncoder(nn.Module):
             x = x + ly["ff"](ly["n2"](x))
         return x
 
-    def forward(self, target, nbr, dt, nbr_mask):
+    def forward(self, target, nbr, dt, nbr_mask, count=None):
         # target:(B,d) record emb of target event; nbr:(B,K,d) encoded neighbour events;
-        # dt:(B,K) seconds from neighbour to target (>=0); nbr_mask:(B,K) True=real.
+        # dt:(B,K) seconds from neighbour to target (>=0); nbr_mask:(B,K) True=real;
+        # count:(B,count_dim) precomputed magnitude signal (log-velocity), always-on.
         B, K, d = nbr.shape
         logdt = torch.log1p(dt.clamp(min=0.0))[..., None].to(nbr.dtype)   # (B,K,1)
         x = nbr + self.dt_mlp(logdt)
@@ -290,7 +298,10 @@ class CrossSequenceEncoder(nn.Module):
             q, k, v, attn_mask=amask, dropout_p=self.drop if self.training else 0.0)
         out = self.proj(out.reshape(B, d))
         has = nbr_mask.any(dim=1, keepdim=True)                         # (B,1) targets w/ >=1 nbr
-        return torch.where(has, self.norm(out), torch.zeros_like(out))
+        pattern = torch.where(has, self.norm(out), torch.zeros_like(out))   # attention path (zeroed if no nbr)
+        if self.count_dim > 0 and count is not None:                    # + always-on magnitude path
+            return pattern + self.count_proj(count.to(pattern.dtype))
+        return pattern
 
 
 class HistoryLayer(nn.Module):

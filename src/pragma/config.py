@@ -66,6 +66,8 @@ class ModelConfig:
     use_xseq: bool = False
     xseq_k: int = 16                    # #prior same-entity neighbour events per target
     xseq_layers: int = 1               # depth of the transformer over the K neighbours
+    xseq_count_dim: int = 0            # >0: count-aware readout of a precomputed magnitude signal
+                                       # (log-velocity) inside the cross-sequence encoder
 
     # --- aligned-SSL auxiliary head: regress a data-derived relational target (windowed
     # velocity) from the record embedding during pretraining, so the (already-in-input)
