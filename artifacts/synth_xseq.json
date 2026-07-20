@@ -1,0 +1,10 @@
+{
+  "arm": "finetune_xseq",
+  "seed": 0,
+  "data_dir": "data/synth_rel",
+  "n": 16499,
+  "base": 0.027698648402933512,
+  "epochs": 8,
+  "pr_auc": 0.23784232585459614,
+  "roc_auc": 0.8540106836621701
+}
