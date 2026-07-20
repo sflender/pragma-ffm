@@ -1,0 +1,10 @@
+{
+  "arm": "finetune_mem",
+  "seed": 2,
+  "data_dir": "data/synth_rel",
+  "n": 16499,
+  "base": 0.027698648402933512,
+  "epochs": 8,
+  "pr_auc": 0.08392568636675136,
+  "roc_auc": 0.6863504089511204
+}
