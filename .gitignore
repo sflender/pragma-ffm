@@ -29,5 +29,5 @@ paper/latex/*.fdb_latexmk
 paper/latex/*.fls
 paper/latex/*.log
 paper/latex/*.out
-paper/latex/*.pdf
 paper/latex/*.synctex.gz
+# (main.pdf IS tracked — the built paper is a deliverable)
