@@ -6,7 +6,7 @@
   box/.style={draw, rounded corners, minimum height=7mm, align=center, inner sep=3pt},
   enc/.style={box, fill=blue!8},
   att/.style={box, fill=orange!12},
-  x/.style={-{Latex[length=2mm]}, thick},
+  ar/.style={-{Latex[length=2mm]}, thick},
   node distance=5mm and 7mm]
 
 \node[box, fill=gray!8] (fields) {event\\fields};
@@ -15,20 +15,20 @@
 \node[box, right=of hist, fill=green!8] (head) {head};
 \node[right=4mm of head] (out) {$\hat{y}$};
 
-\draw[x] (fields) -- (evt);
-\draw[x] (evt) -- (hist) node[midway,above,font=\scriptsize] {[EVT]};
-\draw[x] (hist) -- (head) node[midway,above,font=\scriptsize] {record emb.};
-\draw[x] (head) -- (out);
+\draw[ar] (fields) -- (evt);
+\draw[ar] (evt) -- (hist) node[midway,above,font=\scriptsize] {[EVT]};
+\draw[ar] (hist) -- (head) node[midway,above,font=\scriptsize] {record emb.};
+\draw[ar] (head) -- (out);
 
 % cross-sequence (third attention) below
 \node[box, fill=gray!8, below=9mm of evt] (nbr) {last-$K$ neighbour\\events at shared\\entity (other accts.)};
 \node[att, right=of nbr, minimum height=10mm] (xseq)
   {Cross-Sequence Encoder {\scriptsize(attn 3)}\\[1pt]
    {\scriptsize pattern (attn) $+$ log-count}};
-\draw[x] (nbr) -- (xseq);
-\draw[x, dashed] (nbr.north) to[out=90,in=180] (evt.west|-nbr.north) ;
-\draw[x] (evt.south) to[out=-90,in=180] ([yshift=2mm]xseq.west);
-\draw[x] (xseq.north) to[out=90,in=-90] (hist.south)
+\draw[ar] (nbr) -- (xseq);
+\draw[ar, dashed] (nbr.north) to[out=90,in=180] (evt.west|-nbr.north) ;
+\draw[ar] (evt.south) to[out=-90,in=180] ([yshift=2mm]xseq.west);
+\draw[ar] (xseq.north) to[out=90,in=-90] (hist.south)
   node[midway,right,font=\scriptsize] {$+$ residual};
 
 \begin{scope}[on background layer]

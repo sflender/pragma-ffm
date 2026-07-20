@@ -1,16 +1,17 @@
-% Count/pattern duality figure (pgfplots; verify on first build).
+% Count/pattern duality figure (pgfplots). Numeric x + manual ticklabels so
+% explicit y-error tuples (+- (0,std)) parse cleanly (symbolic x coords do not).
 \begin{figure}[t]
 \centering
 \begin{subfigure}{0.49\linewidth}\centering
 \begin{tikzpicture}
 \begin{axis}[width=\linewidth, height=4.2cm, ybar, bar width=7pt,
   ymin=0, ymax=0.45, ylabel={PR-AUC}, ylabel near ticks,
-  symbolic x coords={FFM,+mem,+xseq,+CA}, xtick=data, x tick label style={rotate=30,anchor=east,font=\scriptsize},
-  title={\scriptsize Synthetic (pattern)}, title style={yshift=-1ex},
-  error bars/.cd, y dir=both, y explicit]
-\addplot[fill=blue!25, draw=blue!55] coordinates {
-  (FFM,0.039) +- (0,0.004) (+mem,0.088) +- (0,0.009)
-  (+xseq,0.252) +- (0,0.117) (+CA,0.318) +- (0,0.010)};
+  xmin=0.5, xmax=4.5, xtick={1,2,3,4},
+  xticklabels={FFM,+mem,+xseq,+CA}, x tick label style={rotate=30,anchor=east,font=\scriptsize},
+  title={\scriptsize Synthetic (pattern)}, title style={yshift=-1ex}]
+\addplot+[fill=blue!25, draw=blue!55, error bars/.cd, y dir=both, y explicit] coordinates {
+  (1,0.039) +- (0,0.004) (2,0.088) +- (0,0.009)
+  (3,0.252) +- (0,0.117) (4,0.318) +- (0,0.010)};
 \end{axis}
 \end{tikzpicture}
 \end{subfigure}\hfill
@@ -18,12 +19,12 @@
 \begin{tikzpicture}
 \begin{axis}[width=\linewidth, height=4.2cm, ybar, bar width=7pt,
   ymin=0.55, ymax=0.73, ylabel={PR-AUC}, ylabel near ticks,
-  symbolic x coords={FFM,+mem,+xseq,+CA}, xtick=data, x tick label style={rotate=30,anchor=east,font=\scriptsize},
-  title={\scriptsize TalkingData (count)}, title style={yshift=-1ex},
-  error bars/.cd, y dir=both, y explicit]
-\addplot[fill=orange!35, draw=orange!70] coordinates {
-  (FFM,0.616) +- (0,0.013) (+mem,0.672) +- (0,0.009)
-  (+xseq,0.619) +- (0,0.004) (+CA,0.700) +- (0,0.011)};
+  xmin=0.5, xmax=4.5, xtick={1,2,3,4},
+  xticklabels={FFM,+mem,+xseq,+CA}, x tick label style={rotate=30,anchor=east,font=\scriptsize},
+  title={\scriptsize TalkingData (count)}, title style={yshift=-1ex}]
+\addplot+[fill=orange!35, draw=orange!70, error bars/.cd, y dir=both, y explicit] coordinates {
+  (1,0.616) +- (0,0.013) (2,0.672) +- (0,0.009)
+  (3,0.619) +- (0,0.004) (4,0.700) +- (0,0.011)};
 \end{axis}
 \end{tikzpicture}
 \end{subfigure}

@@ -17,15 +17,26 @@ attentions --- within an event, and across an account's own history.
 
 \subsection{The cross-sequence encoder (third attention)}
 A per-account model is blind to a shared entity's cross-account state. We add a third attention.
-For a target event on account $a$ at shared entity $e$ (merchant, IP, \dots) and time $t$, we
-gather the last-$K$ events at $e$ with timestamp strictly before $t$ (causal, across \emph{all}
-accounts). Each neighbour event is encoded by the \emph{shared} event encoder into its
-\texttt{[EVT]} token; a learned log-$\Delta t$ recency signal is added, an optional shallow
-transformer mixes the $K$ neighbours, and the target's record embedding \emph{queries} them by
-cross-attention. The result is a residual added to the target embedding. Neighbours are the most
-recent $K$ prior events at $e$ (temporal recency, not similarity selection); their embeddings are
-recomputed each step so gradients flow into the shared encoder (\S\ref{sec:productization}
-discusses caching).
+For a target event on account $a$ at shared entity $e$ (merchant, IP, \dots) and time $t$, with
+record embedding $q=h_t\in\mathbb{R}^{d}$ from the history encoder, we gather the neighbour set
+$\mathcal{N}_{e,t}=\{$the last $K$ events at $e$ with time ${<}\,t\}$ (causal, across \emph{all}
+accounts; $|\mathcal{N}_{e,t}|\le K$). Each neighbour event $j$ is encoded by the \emph{shared}
+event encoder $E(\cdot)$ into its \texttt{[EVT]} token $\mathbf{z}_j=E(x_j)\in\mathbb{R}^{d}$, to
+which we add a learned recency embedding of its lag, $\tilde{\mathbf{z}}_j=\mathbf{z}_j+\rho\!\big(\log(t-t_j)\big)$;
+an optional shallow transformer $T$ mixes the $K$ neighbours, $\{\mathbf{n}_j\}=T(\{\tilde{\mathbf{z}}_j\})$.
+The target \emph{queries} them by multi-head cross-attention with a padding mask $m_j$
+($0$ for a real neighbour, a large negative constant for padding),
+\begin{align}
+Q &= W_Q\,q, \quad K_j = W_K\,\mathbf{n}_j, \quad V_j = W_V\,\mathbf{n}_j, \\
+\alpha_j &= \operatorname{softmax}_j\!\Big(\tfrac{Q^{\top}K_j}{\sqrt{d_h}} + m_j\Big), \qquad
+u = \textstyle\sum_j \alpha_j\,V_j,
+\end{align}
+and the \emph{pattern} output is $p=\mathbb{1}[\,\mathcal{N}_{e,t}\neq\varnothing\,]\cdot
+\operatorname{LayerNorm}(W_O\,u)$ --- zeroed for a target with no in-window neighbour, so a
+no-neighbour row contributes an exact zero rather than a masked-softmax NaN. Neighbours are the
+most recent $K$ prior events at $e$ (temporal recency, not similarity selection); their embeddings
+are recomputed each step so gradients flow into the shared encoder $E$
+(\S\ref{sec:productization} discusses caching).
 
 \subsection{Count vs.\ pattern, and the count-aware readout}
 \label{sec:method:countaware}
@@ -38,17 +49,39 @@ interval and cannot represent ``how many.'' A rank-1 memory that reads a precomp
 velocity captures the count but not the pattern; raw-neighbour attention captures the pattern but
 not the count.
 
-We unify them. The \textbf{count-aware cross-sequence encoder} carries both: the raw-neighbour
-attention path above, \emph{plus} an always-on readout of a precomputed magnitude signal
-$c\in\mathbb{R}^{d_c}$ (a windowed log-velocity), projected and added to the attention output,
-\[
-\textrm{xseq}(q, \{n_k\}, c) \;=\; \underbrace{\textsf{Attn}\big(q, \{n_k\}\big)}_{\text{pattern}}
-\;+\; \underbrace{W_c\,c}_{\text{count}} .
-\]
-The count term is applied even when a target has no in-window neighbour (the attention residual is
-then zero), so magnitude is never lost to truncation. One module thus behaves like raw attention
-when the signal is pattern-type and like a velocity readout when it is count-type
-(\S\ref{sec:realdata}).
+We unify them. The \textbf{count-aware cross-sequence encoder} carries both the pattern path $p$
+above \emph{and} an always-on readout of a precomputed magnitude signal $c\in\mathbb{R}^{d_c}$
+(a windowed log-velocity), through a small projection $g(c)=\operatorname{LN}(\operatorname{GELU}(W_c\,c))$
+added to the pattern output; the encoder returns the residual added to the target embedding,
+\begin{align}
+\operatorname{xseq}(q,\{\mathbf{n}_j\},c) &\;=\;
+\underbrace{p}_{\text{pattern}} \;+\; \underbrace{g(c)}_{\text{count}}, \\
+h_t' &\;=\; h_t + \operatorname{xseq}.
+\end{align}
+The count term $g(c)$ is applied even when a target has no in-window neighbour (then $p=0$), so
+magnitude is never lost to $K$-truncation. One module thus behaves like raw attention when the
+signal is pattern-type and like a velocity readout when it is count-type (\S\ref{sec:realdata});
+setting $g\equiv 0$ recovers the pattern-only cross-sequence encoder, and dropping the attention
+path recovers the rank-1 count memory --- the two ablation arms in Table~\ref{tab:main}.
+
+\begin{algorithm}[t]
+\caption{Count-aware cross-sequence encoding of one target event}
+\label{alg:xseq}
+\begin{algorithmic}[1]
+\Require target embed.\ $q{=}h_t$, entity $e$, time $t$, magnitude $c$, window $K$
+\State $\mathcal{N} \gets$ last $K$ events at $e$ with time ${<}\,t$ \Comment{causal, all accounts}
+\If{$\mathcal{N}=\varnothing$} \State $p \gets \mathbf{0}$
+\Else
+  \For{$j \in \mathcal{N}$}
+    \State $\mathbf{z}_j \gets E(x_j) + \rho(\log(t-t_j))$ \Comment{shared encoder $+$ recency}
+  \EndFor
+  \State $\{\mathbf{n}_j\} \gets T(\{\mathbf{z}_j\})$ \Comment{optional shallow mix}
+  \State $p \gets \operatorname{LN}\!\big(W_O\operatorname{MHA}(q,\{\mathbf{n}_j\})\big)$
+  \Comment{target queries neighbours}
+\EndIf
+\State \Return $h_t + p + \operatorname{LN}(\operatorname{GELU}(W_c\,c))$ \Comment{count path always on}
+\end{algorithmic}
+\end{algorithm}
 
 \subsection{Baselines and evaluation}
 We compare against a GBDT (LightGBM~\cite{ke2017lightgbm}) over per-transaction features including causal entity
