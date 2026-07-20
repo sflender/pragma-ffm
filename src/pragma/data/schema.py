@@ -57,12 +57,25 @@ SYNTH_FIELDS = [
     ("merchant", "hash"),
 ]
 
+# TalkingData AdTracking (click fraud). SEQUENCE entity = user (ip+device+os); the shared
+# cross-user entity is the IP (fraud farm). Within a user's sequence device/os/ip are constant,
+# so the per-click event fields are app/channel (+ hour, dt). No numeric field (clicks have no
+# amount); a dummy amount=0 column is emitted for the encoder. is_fraud = is_attributed.
+TALKINGDATA_FIELDS = [
+    ("app", "cat"),
+    ("channel", "cat"),
+    ("device", "cat"),
+    ("os", "cat"),
+    ("hour", "cal"),          # derived from ts
+]
+
 CAL_SIZES = {"hour": 24, "dow": 7}
 
 SCHEMAS = {
     "tabformer": TABFORMER_FIELDS,
     "ieee_cis": IEEE_CIS_FIELDS,
     "synth": SYNTH_FIELDS,
+    "talkingdata": TALKINGDATA_FIELDS,
 }
 
 
