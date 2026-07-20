@@ -55,3 +55,10 @@ CIKM 2026 (~May), ECML-PKDD 2026 (~Mar–Apr), DSAA 2026 (~Jun–Jul). Target th
   The three encoders + cross-sequence encoder · Synthetic benchmark (S1–S3) · Real data (TalkingData
   win) · When-it-helps boundary (Elliptic/Yelp/Amazon/IEEE) · Productization (caching, count-aware) ·
   Limitations · Conclusion.
+
+
+## ICAIF 2026 — CONFIRMED (icaif2026.org, fetched 2026-07-20)
+- **Milan, Nov 14–17, 2026.** Submission **deadline: 2 Aug 2026**.
+- **8 pages TOTAL** in ACM two-column sigconf, **including figures AND references**. Over-length rejected without review.
+- **Double-blind** review. **No supplementary material / appendix accepted** — everything must fit in 8pp.
+- Appears to be a single submission pool (oral vs poster assigned by the committee), not a separate lower-bar poster track.
