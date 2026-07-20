@@ -32,3 +32,18 @@ the \textbf{count-aware} encoder, which adds an always-on velocity readout to th
 is both higher and \emph{stable} ($0.318\pm0.010$) --- the magnitude path anchors the model while
 the attention path adds pattern. Here the signal is a neighbour \emph{pattern}, so attention
 carries most of the lift; the count path's role is to \emph{stabilise} it.
+
+\paragraph{Why the FFM does not beat the GBDT here --- and why that is the point.} On this
+benchmark the GBDT ceiling is above every FFM arm, and deliberately so. The relational signal is,
+by construction, a \emph{scalar} cross-card velocity (merchant identity uninformative, amounts
+drawn from the legit distribution, fraud cards random); a GBDT handed that one feature is near
+optimal on it. Crucially the FFM has \emph{no informational edge} to exploit: because fraud lands
+on \emph{random} cards, a card's own history --- the History encoder's forte --- is uninformative,
+so the FFM and the GBDT work from the same signal and the FFM only pays a representation and
+small-sample optimisation overhead. This is the opposite of TalkingData (\S\ref{sec:realdata}),
+where the FFM \emph{does} beat the tabular baseline precisely because it models a user's own click
+sequence that the baseline lacks. The GBDT here is not a competitor but the \emph{ceiling} that
+certifies the signal is real and strong; the FFM result to read is the \emph{ablation}
+($0.039\!\to\!0.318$), i.e.\ that a per-account model is blind to signal the cross-sequence encoder
+recovers. Consistent with \S\ref{sec:ffmvsgbdt}, an FFM beats trees only when it carries sequential
+structure the tree lacks --- not on a pure count.
