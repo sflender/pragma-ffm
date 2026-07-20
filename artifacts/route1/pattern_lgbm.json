@@ -1,0 +1,8 @@
+{
+  "data_dir": "/tmp/r1/synth_pattern",
+  "n_test": 16536,
+  "base_rate": 0.029874213836477988,
+  "pr_auc": 0.43583687787160336,
+  "roc_auc": 0.8145783310712215,
+  "n_features": 11
+}

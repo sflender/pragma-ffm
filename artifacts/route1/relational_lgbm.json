@@ -1,0 +1,8 @@
+{
+  "data_dir": "/tmp/r1/synth_relational",
+  "n_test": 16499,
+  "base_rate": 0.027698648402933512,
+  "pr_auc": 0.5867851836420509,
+  "roc_auc": 0.9390436264542992,
+  "n_features": 11
+}

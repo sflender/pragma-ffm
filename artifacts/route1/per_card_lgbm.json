@@ -1,0 +1,8 @@
+{
+  "data_dir": "/tmp/r1/synth_per_card",
+  "n_test": 16443,
+  "base_rate": 0.02438727726084048,
+  "pr_auc": 0.07670372816644358,
+  "roc_auc": 0.8237601669681923,
+  "n_features": 11
+}
