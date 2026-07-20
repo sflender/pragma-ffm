@@ -1,0 +1,26 @@
+\section{Background and related work}
+
+\paragraph{Event-sequence and tabular transformers.} Encoder-only, masked-pretrained
+transformers over tokenised tabular/event sequences are established: BEHRT for medical records and
+TabBERT/TabFormer for transactions introduced the hierarchical field-then-sequence design our FFM
+follows, and later work studied numeric encodings (piecewise-linear, periodic). The neural
+\emph{architecture} we build on is therefore not itself novel; our object of study is the
+\emph{transfer} recipe (pretrain once, adapt with a light head) and, specifically, what it misses
+relationally.
+
+\paragraph{Generative recommender foundation models.} HSTU, OneRec, and TIGER reformulate
+recommendation as sequential transduction over a user's interactions and scale to enormous sizes.
+These are architecturally the same per-user sequence transformers, yet highly effective, for two
+reasons we make precise: their pretraining objective \emph{is} the downstream task (next item) and
+they train end-to-end (no proxy, no frozen bottleneck), and the relational signal they rely on
+(collaborative affinities) is largely \emph{stationary} and absorbs into shared item embeddings ---
+unlike the \emph{transient} cross-entity state (``compromised right now'') that characterises much
+fraud, which must be read from concurrent cross-sequence activity.
+
+\paragraph{GBDTs and graph methods for fraud.} Gradient-boosted trees with client- and
+entity-level aggregates remain the production and competition standard. On graph fraud, methods
+such as CARE-GNN and PC-GNN beat plain GNNs by \emph{similarity-based neighbour selection} to
+resist \emph{camouflage} (fraud nodes wiring mostly to legitimate ones); we return to this when we
+find plain neighbour attention underperforms on camouflaged graphs (\S\ref{sec:boundary}). Our
+contribution is orthogonal: a sequence-native cross-sequence attention for FFMs, and a map of when
+it beats a scalar aggregate.

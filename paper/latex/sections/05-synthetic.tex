@@ -1,0 +1,30 @@
+\section{Controlled synthetic benchmark}
+\label{sec:synthetic}
+
+To remove every confound we generate transactions where we \emph{know} where the fraud signal
+lives. Two mechanisms: \textbf{per-account} --- a card is compromised and fires a short burst of
+fraud on its own timeline (a per-sequence signal); \textbf{relational} --- a merchant is
+compromised for a short window, producing a velocity spike of fraud across \emph{many random
+cards}, with fraud amounts drawn from the legit distribution, a uniform per-merchant fraud rate
+(so merchant identity is uninformative), and random fraud cards (so no per-card-history tell). The
+only signal is the merchant's transient cross-card velocity. A LightGBM feature-group ablation
+confirms the design: per-account fraud is recovered by card history (PR-AUC $0.04\!\to\!0.82$) and
+invisible to merchant velocity; relational fraud is invisible to card history ($0.06$) and
+recovered \emph{only} by cross-entity windowed velocity ($0.06\!\to\!0.36$).
+
+\paragraph{Structural blindness and the proxy-alignment gap.} A frozen-probe FFM \emph{nails}
+per-account fraud (PR-AUC \num{0.81}) and \emph{collapses to base} on relational fraud
+(\num{0.035}) --- same model and data, opposite outcome, driven only by where the signal lives.
+A rank-1 memory that cross-attends a precomputed windowed velocity \emph{contains} the exact
+feature LightGBM turns into \num{0.36}, yet the frozen probe reaches only \num{0.047}: the masked
+objective has no reason to preserve a feature that does not aid token reconstruction, so a frozen
+readout cannot extract it even when it is in the input. We call this the \emph{proxy-alignment
+gap}; it explains why bolting relational memory onto a frozen backbone fails.
+
+\paragraph{The cross-sequence encoder recovers the signal.} Trained end-to-end on the relational
+data (Table~\ref{tab:main}, synthetic column), the per-account FFM sits at \num{0.037}; a rank-1
+memory reaches only \num{0.078}; the \emph{cross-sequence encoder} over raw neighbours reaches
+\num{0.409} --- $5\times$ the memory and past the \num{0.36} velocity ceiling --- and retains most
+of it (\num{0.362}) even with the per-account backbone \emph{frozen}, so the relational capability
+is a bolt-on. Here the signal is a neighbour \emph{pattern}, and raw-neighbour attention is the
+winning path.

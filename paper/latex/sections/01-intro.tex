@@ -1,0 +1,54 @@
+\section{Introduction}
+
+Fraud detection at scale is still dominated by gradient-boosted decision trees (GBDTs) over
+hand-engineered features. A compelling alternative, mirroring foundation models elsewhere, is
+to pretrain a transformer on raw event sequences with a self-supervised objective and adapt
+it to downstream tasks with a lightweight head --- a \emph{financial foundation model} (FFM).
+Recent industrial FFMs tokenise each transaction into key--value--time tokens, encode the
+fields of an event with a set transformer, and encode an account's event history with a
+temporal transformer; adaptation is a frozen backbone plus a linear probe. In effect these
+models use \emph{two attentions}: one \emph{within} an event (over its fields) and one
+\emph{across} an account's own history.
+
+We take this design seriously and ask a mechanistic question: \emph{when, and why, does an
+FFM beat a GBDT for fraud --- and what is it missing?} Our central observation is that a
+two-attention FFM only ever sees one entity in isolation, and is therefore
+\textbf{structurally blind to relational fraud}: patterns that live in a shared entity's
+activity \emph{across} accounts. A compromised merchant produces a burst of fraud spread over
+many cards; a fraud-farm IP drives many devices; a laundering ring fans small transfers over
+many accounts. None of these are visible to a model that attends only within one account's
+sequence.
+
+We add a \emph{third}, \textbf{cross-sequence attention} --- the target event attends over a
+shared entity's recent events from \emph{other} accounts --- and we study, on controlled and
+real data, when it recovers relational fraud and when a cheap aggregate already suffices. Our
+contributions:
+
+\begin{itemize}
+\item \textbf{Structural blindness, proven on ground truth (\S\ref{sec:synthetic}).} On a
+synthetic generator where we \emph{place} the fraud signal by construction, a per-account FFM
+nails per-account fraud but collapses to the base rate on relational fraud; the cross-sequence
+encoder recovers it. The same benchmark isolates a \emph{proxy-alignment gap}: a masked
+pretraining objective does not preserve a relational feature it is never asked to reconstruct,
+so a frozen probe cannot read it --- even when handed the feature.
+
+\item \textbf{A real-data win, and a boundary (\S\ref{sec:realdata}--\S\ref{sec:boundary}).}
+On real click fraud (TalkingData), where the user is a device on a shared IP, the cross-sequence
+component beats the per-account FFM by \num{+0.055} PR-AUC --- signal a per-account model cannot
+see. Across four real datasets we map \emph{when} the third attention helps and when a scalar
+aggregate is already enough.
+
+\item \textbf{Count vs.\ pattern, unified (\S\ref{sec:method},~\S\ref{sec:realdata}).} The
+relational signal is sometimes a \emph{pattern} in a neighbour's raw events (attention over
+neighbours wins) and sometimes a \emph{count} --- a velocity magnitude a scalar captures
+losslessly but a bounded attention window truncates. A \emph{count-aware} cross-sequence encoder
+carries both paths in one module; a single such module beats the per-account FFM on both a
+synthetic (pattern) benchmark and real click fraud (count).
+
+\item \textbf{Productization (\S\ref{sec:productization}).} The design admits neighbour-embedding
+caching for a frozen backbone, and yields a practical taxonomy --- \emph{choose the relational
+encoder by signal type} --- for deploying relational FFMs.
+\end{itemize}
+
+All code, the synthetic generator, adapters for every dataset, and per-experiment result files
+are released for reproducibility.

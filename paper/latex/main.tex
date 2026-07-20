@@ -1,0 +1,52 @@
+%% ICAIF submission — ACM sigconf.
+%% Toggle `anonymous` for double-blind review (confirm ICAIF policy before submitting).
+\documentclass[sigconf,nonacm]{acmart}
+%% For camera-ready with ACM reference, remove `nonacm` and fill in the rights block.
+
+\settopmatter{printacmref=false}
+\setcopyright{none}
+\renewcommand\footnotetextcopyrightpermission[1]{}
+\pagestyle{plain}
+
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{subcaption}
+
+% draft helpers (strip before submission)
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+\newcommand{\num}[1]{#1}   % wrap final numbers so they are easy to grep/update
+
+\begin{document}
+
+\title{When Two Attentions Aren't Enough: Count- and Pattern-Aware
+Cross-Sequence Encoding for Relational Fraud in Financial Foundation Models}
+
+\author{Anonymous Author(s)}
+\affiliation{\institution{Anonymous Institution}\country{}}
+
+\begin{abstract}
+\input{sections/00-abstract}
+\end{abstract}
+
+\keywords{financial foundation models, fraud detection, event-sequence
+transformers, relational learning, gradient-boosted trees}
+
+\maketitle
+
+\input{sections/01-intro}
+\input{sections/02-background}
+\input{sections/03-method}
+\input{sections/04-ffm-vs-gbdt}
+\input{sections/05-synthetic}
+\input{sections/06-realdata}
+\input{sections/07-boundary}
+\input{sections/08-productization}
+\input{sections/09-limitations}
+\input{sections/10-conclusion}
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{refs}
+
+\end{document}

@@ -1,0 +1,44 @@
+\section{When does the third attention help?}
+\label{sec:boundary}
+
+The cross-sequence encoder is not a universal win, and saying \emph{when} it helps is part of the
+contribution. Across four real datasets (Table~\ref{tab:boundary}) the outcome is governed by the
+\emph{type} of relational signal and whether a cheap aggregate already captures it.
+
+\begin{table}[t]
+\centering
+\caption{When the cross-sequence attention beats a matched summary, and why.}
+\label{tab:boundary}
+\small
+\begin{tabular}{lll}
+\toprule
+Dataset & Relational signal type & Cross-seq helps? \\
+\midrule
+Synthetic (rel.) & neighbour \emph{pattern} & yes (attention) \\
+TalkingData      & velocity \emph{count}    & yes (count path) \\
+Elliptic (BTC)   & rich engineered summary  & no --- summary suffices \\
+Yelp/Amazon      & homophily, \emph{camouflaged} & no --- needs selection \\
+IEEE-CIS         & static / per-transaction & n/a --- not relational \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Count-type signals: a scalar suffices.} On Elliptic (Bitcoin AML; 203K tx nodes) the
+72 shipped ``aggregated'' features are a rich neighbourhood summary; attention over raw neighbours
+beats no-neighbours but does not beat that summary and adds nothing on top. On TalkingData the
+signal is a magnitude a scalar log-count already captures --- which is exactly why the count path,
+not raw attention, wins there. When the relational signal is a count and a good aggregate exists,
+raw-neighbour attention is redundant (and can add noise).
+
+\paragraph{Camouflage: attention needs selection.} On the Yelp/Amazon review-fraud graphs, plain
+neighbour attention \emph{underperforms} a mean summary. The graphs are camouflaged: a fraud node's
+neighbours are only \num{19.5}\% fraud on Yelp (base \num{14.5}\%), \num{10.3}\% on Amazon (base
+\num{6.9}\%). Plain attention drowns in legitimate neighbours --- the documented reason graph-SOTA
+uses \emph{similarity-based neighbour selection}. This bounds our claim and points to selection as
+the fix in that regime.
+
+\paragraph{Takeaway.} Raw-neighbour attention wins when the relational signal lives in neighbour
+\emph{content/pattern} and is not already summarised; a count/magnitude signal is better served by
+the count path; a camouflaged graph needs neighbour selection; a static problem needs no relational
+encoder at all. The count-aware encoder covers the first two --- the regimes that dominate
+sequence-native transaction fraud.

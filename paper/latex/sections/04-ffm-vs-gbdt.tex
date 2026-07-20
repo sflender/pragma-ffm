@@ -1,0 +1,15 @@
+\section{When does an FFM beat a GBDT?}
+\label{sec:ffmvsgbdt}
+
+Before adding relational structure we establish that the FFM advantage is
+\emph{dataset-dependent}, which motivates the relational question. On IBM TabFormer (synthetic
+card transactions with per-account injected fraud), a converged FFM (frozen probe) reaches
+PR-AUC \num{0.807} versus \num{0.369} for LightGBM on matched causal features --- a $2\times$
+improvement, because TabFormer fraud is a \emph{burst process} (a compromised card fires several
+fraudulent transactions within seconds) that a sequence encoder captures directly. On IEEE-CIS
+(real card-not-present fraud), restricting both models to the same interpretable fields, the FFM
+\emph{loses}: PR-AUC \num{0.106} vs.\ \num{0.157}, because that fraud is far more a function of the
+\emph{current} transaction's attributes than of account history --- a per-row pattern trees model
+directly. The FFM helps when the signal is sequential and aligned with its objective, and
+underperforms trees when it is static. This sharpens the question: can we give the FFM the
+\emph{cross-entity} signal a per-account model cannot see at all?

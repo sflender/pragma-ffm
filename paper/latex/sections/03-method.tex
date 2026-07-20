@@ -1,0 +1,54 @@
+\section{Three attentions for relational fraud}
+\label{sec:method}
+
+\subsection{The two-attention FFM}
+We reproduce a standard FFM at laptop scale (\num{3}--\num{14}M parameters). Each event is a set
+of key--value tokens; an \textbf{event encoder} (a set transformer with a learned \texttt{[EVT]}
+token, no positional encoding) contextualises the fields and emits a per-event vector. A
+\textbf{history encoder} (a bidirectional transformer with rotary positional encoding on
+\emph{continuous event time}) runs over an account's \texttt{[EVT]} sequence and emits a record
+embedding per event. Pretraining masks and reconstructs $(\textrm{field},\textrm{value})$ tokens;
+adaptation reads the final-position embedding with a linear or shallow head, evaluated
+as-of-date (a window ending at each target event, no future leakage). These are the two
+attentions --- within an event, and across an account's own history.
+
+\subsection{The cross-sequence encoder (third attention)}
+A per-account model is blind to a shared entity's cross-account state. We add a third attention.
+For a target event on account $a$ at shared entity $e$ (merchant, IP, \dots) and time $t$, we
+gather the last-$K$ events at $e$ with timestamp strictly before $t$ (causal, across \emph{all}
+accounts). Each neighbour event is encoded by the \emph{shared} event encoder into its
+\texttt{[EVT]} token; a learned log-$\Delta t$ recency signal is added, an optional shallow
+transformer mixes the $K$ neighbours, and the target's record embedding \emph{queries} them by
+cross-attention. The result is a residual added to the target embedding. Neighbours are the most
+recent $K$ prior events at $e$ (temporal recency, not similarity selection); their embeddings are
+recomputed each step so gradients flow into the shared encoder (\S\ref{sec:productization}
+discusses caching).
+
+\subsection{Count vs.\ pattern, and the count-aware readout}
+\label{sec:method:countaware}
+Relational fraud signal comes in two forms. Sometimes it is a \emph{pattern} in the neighbours'
+raw events --- the structure of a compromise burst --- which attention over raw \texttt{[EVT]}
+tokens captures and a fixed summary vector cannot. Sometimes it is a \emph{count}: a velocity
+\emph{magnitude} (e.g.\ 700 clicks/hour on a fraud IP) that a scalar log-count encodes losslessly
+but a bounded-$K$ attention window \emph{truncates} --- the $K$ most-recent neighbours span a tiny
+interval and cannot represent ``how many.'' A rank-1 memory that reads a precomputed windowed
+velocity captures the count but not the pattern; raw-neighbour attention captures the pattern but
+not the count.
+
+We unify them. The \textbf{count-aware cross-sequence encoder} carries both: the raw-neighbour
+attention path above, \emph{plus} an always-on readout of a precomputed magnitude signal
+$c\in\mathbb{R}^{d_c}$ (a windowed log-velocity), projected and added to the attention output,
+\[
+\textrm{xseq}(q, \{n_k\}, c) \;=\; \underbrace{\textsf{Attn}\big(q, \{n_k\}\big)}_{\text{pattern}}
+\;+\; \underbrace{W_c\,c}_{\text{count}} .
+\]
+The count term is applied even when a target has no in-window neighbour (the attention residual is
+then zero), so magnitude is never lost to truncation. One module thus behaves like raw attention
+when the signal is pattern-type and like a velocity readout when it is count-type
+(\S\ref{sec:realdata}).
+
+\subsection{Baselines and evaluation}
+We compare against a GBDT (LightGBM) over per-transaction features including causal entity
+aggregates, evaluated on the \emph{same} stratified subsample as the FFM so the numbers sit on one
+axis. Given extreme class imbalance we report PR-AUC (average precision) as the headline, with
+ROC-AUC alongside.
