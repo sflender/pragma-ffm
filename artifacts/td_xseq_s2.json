@@ -1,0 +1,10 @@
+{
+  "arm": "finetune_xseq",
+  "seed": 2,
+  "data_dir": "data/td_seq",
+  "n": 152598,
+  "base": 0.017025124837809144,
+  "epochs": 6,
+  "pr_auc": 0.6169155997318237,
+  "roc_auc": 0.9681198562997178
+}
