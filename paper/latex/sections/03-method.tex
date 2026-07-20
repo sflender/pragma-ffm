@@ -7,7 +7,8 @@
 We reproduce a standard FFM at laptop scale (\num{3}--\num{14}M parameters). Each event is a set
 of key--value tokens; an \textbf{event encoder} (a set transformer with a learned \texttt{[EVT]}
 token, no positional encoding) contextualises the fields and emits a per-event vector. A
-\textbf{history encoder} (a bidirectional transformer with rotary positional encoding on
+\textbf{history encoder} (a bidirectional transformer with rotary positional
+encoding~\cite{su2021roformer} on
 \emph{continuous event time}) runs over an account's \texttt{[EVT]} sequence and emits a record
 embedding per event. Pretraining masks and reconstructs $(\textrm{field},\textrm{value})$ tokens;
 adaptation reads the final-position embedding with a linear or shallow head, evaluated
@@ -50,7 +51,7 @@ when the signal is pattern-type and like a velocity readout when it is count-typ
 (\S\ref{sec:realdata}).
 
 \subsection{Baselines and evaluation}
-We compare against a GBDT (LightGBM) over per-transaction features including causal entity
+We compare against a GBDT (LightGBM~\cite{ke2017lightgbm}) over per-transaction features including causal entity
 aggregates, evaluated on the \emph{same} stratified subsample as the FFM so the numbers sit on one
 axis. Given extreme class imbalance we report PR-AUC (average precision) as the headline, with
 ROC-AUC alongside.

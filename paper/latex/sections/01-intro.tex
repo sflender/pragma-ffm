@@ -1,10 +1,12 @@
 \section{Introduction}
 
 Fraud detection at scale is still dominated by gradient-boosted decision trees (GBDTs) over
-hand-engineered features. A compelling alternative, mirroring foundation models elsewhere, is
+hand-engineered features~\cite{ke2017lightgbm,chen2016xgboost}. A compelling alternative,
+mirroring foundation models elsewhere~\cite{bommasani2021foundation}, is
 to pretrain a transformer on raw event sequences with a self-supervised objective and adapt
 it to downstream tasks with a lightweight head --- a \emph{financial foundation model} (FFM).
-Recent industrial FFMs tokenise each transaction into key--value--time tokens, encode the
+Recent industrial FFMs~\cite{ostroukhov2026pragma,yeh2025treasure,padhi2021tabular} tokenise
+each transaction into key--value--time tokens, encode the
 fields of an event with a set transformer, and encode an account's event history with a
 temporal transformer; adaptation is a frozen backbone plus a linear probe. In effect these
 models use \emph{two attentions}: one \emph{within} an event (over its fields) and one

@@ -17,7 +17,8 @@ per-account fraud (PR-AUC \num{0.81}) and \emph{collapses to base} on relational
 (\num{0.035}) --- same model and data, opposite outcome, driven only by where the signal lives.
 A rank-1 memory that cross-attends a precomputed windowed velocity \emph{contains} the exact
 feature LightGBM turns into \num{0.36}, yet the frozen probe reaches only \num{0.047}: the masked
-objective has no reason to preserve a feature that does not aid token reconstruction, so a frozen
+objective~\cite{devlin2019bert,he2022mae}
+has no reason to preserve a feature that does not aid token reconstruction, so a frozen
 readout cannot extract it even when it is in the input. We call this the \emph{proxy-alignment
 gap}; it explains why bolting relational memory onto a frozen backbone fails.
 

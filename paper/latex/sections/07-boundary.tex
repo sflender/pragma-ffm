@@ -23,7 +23,8 @@ IEEE-CIS         & static / per-transaction & n/a --- not relational \\
 \end{tabular}
 \end{table}
 
-\paragraph{Count-type signals: a scalar suffices.} On Elliptic (Bitcoin AML; 203K tx nodes) the
+\paragraph{Count-type signals: a scalar suffices.} On Elliptic~\cite{weber2019elliptic}
+(Bitcoin AML; 203K tx nodes) the
 72 shipped ``aggregated'' features are a rich neighbourhood summary; attention over raw neighbours
 beats no-neighbours but does not beat that summary and adds nothing on top. On TalkingData the
 signal is a magnitude a scalar log-count already captures --- which is exactly why the count path,
@@ -34,7 +35,7 @@ raw-neighbour attention is redundant (and can add noise).
 neighbour attention \emph{underperforms} a mean summary. The graphs are camouflaged: a fraud node's
 neighbours are only \num{19.5}\% fraud on Yelp (base \num{14.5}\%), \num{10.3}\% on Amazon (base
 \num{6.9}\%). Plain attention drowns in legitimate neighbours --- the documented reason graph-SOTA
-uses \emph{similarity-based neighbour selection}. This bounds our claim and points to selection as
+uses \emph{similarity-based neighbour selection}~\cite{dou2020caregnn,liu2021pcgnn}. This bounds our claim and points to selection as
 the fix in that regime.
 
 \paragraph{Takeaway.} Raw-neighbour attention wins when the relational signal lives in neighbour

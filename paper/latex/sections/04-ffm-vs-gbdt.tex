@@ -2,11 +2,13 @@
 \label{sec:ffmvsgbdt}
 
 Before adding relational structure we establish that the FFM advantage is
-\emph{dataset-dependent}, which motivates the relational question. On IBM TabFormer (synthetic
+\emph{dataset-dependent}~\cite{gorishniy2021revisiting}, which motivates the relational question.
+On IBM TabFormer~\cite{padhi2021tabular} (synthetic
 card transactions with per-account injected fraud), a converged FFM (frozen probe) reaches
 PR-AUC \num{0.807} versus \num{0.369} for LightGBM on matched causal features --- a $2\times$
 improvement, because TabFormer fraud is a \emph{burst process} (a compromised card fires several
-fraudulent transactions within seconds) that a sequence encoder captures directly. On IEEE-CIS
+fraudulent transactions within seconds) that a sequence encoder captures directly. On
+IEEE-CIS~\cite{ieeecis2019}
 (real card-not-present fraud), restricting both models to the same interpretable fields, the FFM
 \emph{loses}: PR-AUC \num{0.106} vs.\ \num{0.157}, because that fraud is far more a function of the
 \emph{current} transaction's attributes than of account history --- a per-row pattern trees model
