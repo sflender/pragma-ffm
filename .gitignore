@@ -20,3 +20,14 @@ dist/
 # published as a release asset (see scripts/fetch_weights.py)
 artifacts/lgbm_model.txt
 code.tgz
+
+# LaTeX build artifacts (regenerate with latexmk / Overleaf)
+paper/latex/*.aux
+paper/latex/*.bbl
+paper/latex/*.blg
+paper/latex/*.fdb_latexmk
+paper/latex/*.fls
+paper/latex/*.log
+paper/latex/*.out
+paper/latex/*.pdf
+paper/latex/*.synctex.gz
