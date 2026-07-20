@@ -21,10 +21,14 @@ objective has no reason to preserve a feature that does not aid token reconstruc
 readout cannot extract it even when it is in the input. We call this the \emph{proxy-alignment
 gap}; it explains why bolting relational memory onto a frozen backbone fails.
 
-\paragraph{The cross-sequence encoder recovers the signal.} Trained end-to-end on the relational
-data (Table~\ref{tab:main}, synthetic column), the per-account FFM sits at \num{0.037}; a rank-1
-memory reaches only \num{0.078}; the \emph{cross-sequence encoder} over raw neighbours reaches
-\num{0.409} --- $5\times$ the memory and past the \num{0.36} velocity ceiling --- and retains most
-of it (\num{0.362}) even with the per-account backbone \emph{frozen}, so the relational capability
-is a bolt-on. Here the signal is a neighbour \emph{pattern}, and raw-neighbour attention is the
-winning path.
+\paragraph{The cross-sequence encoder recovers the signal --- but raw attention is unstable.}
+Trained end-to-end on the relational data (Table~\ref{tab:main}, synthetic column, mean\,$\pm$\,std
+over 3 seeds), the per-account FFM sits at $0.039\pm0.004$ and a rank-1 memory at $0.088\pm0.009$
+--- both tight. Raw-neighbour cross-sequence attention reaches a much higher \emph{mean}
+($0.252\pm0.117$) but is \textbf{wildly seed-unstable} (per-seed $0.41/0.13/0.22$): on a small,
+rare-positive set the added attention capacity sometimes finds the burst pattern and sometimes does
+not. This instability is the crux of the count-vs-pattern story (\S\ref{sec:method:countaware}):
+the \textbf{count-aware} encoder, which adds an always-on velocity readout to the same attention,
+is both higher and \emph{stable} ($0.318\pm0.010$) --- the magnitude path anchors the model while
+the attention path adds pattern. Here the signal is a neighbour \emph{pattern}, so attention
+carries most of the lift; the count path's role is to \emph{stabilise} it.

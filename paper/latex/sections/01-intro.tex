@@ -33,10 +33,11 @@ pretraining objective does not preserve a relational feature it is never asked t
 so a frozen probe cannot read it --- even when handed the feature.
 
 \item \textbf{A real-data win, and a boundary (\S\ref{sec:realdata}--\S\ref{sec:boundary}).}
-On real click fraud (TalkingData), where the user is a device on a shared IP, the cross-sequence
-component beats the per-account FFM by \num{+0.055} PR-AUC --- signal a per-account model cannot
-see. Across four real datasets we map \emph{when} the third attention helps and when a scalar
-aggregate is already enough.
+On real click fraud (TalkingData), where the user is a device on a shared IP, the count-aware
+cross-sequence encoder beats the per-account FFM by \num{+0.084} PR-AUC ($0.700\pm0.011$ vs.\
+$0.616\pm0.013$ over three seeds) --- signal a per-account model cannot see. Across four real
+datasets we map \emph{when} the third attention helps and when a scalar aggregate is already
+enough.
 
 \item \textbf{Count vs.\ pattern, unified (\S\ref{sec:method},~\S\ref{sec:realdata}).} The
 relational signal is sometimes a \emph{pattern} in a neighbour's raw events (attention over

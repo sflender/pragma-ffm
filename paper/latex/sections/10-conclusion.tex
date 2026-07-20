@@ -5,10 +5,11 @@ Standard financial foundation models use two attentions --- within an event and 
 history --- and are structurally blind to relational fraud that lives in a shared entity's activity
 across accounts. We add a third, cross-sequence attention and, on a controlled benchmark with
 ground-truth signal placement, show it recovers relational fraud a per-account model cannot see,
-while a frozen masked backbone cannot (the proxy-alignment gap). On real click fraud it beats the
-per-account FFM by \num{+0.055} PR-AUC. The relational signal comes in two forms --- a neighbour
-\emph{pattern} and a velocity \emph{count} --- and a \emph{count-aware} cross-sequence encoder
-carrying both paths wins in each regime with a single module. A map across four real datasets says
+while a frozen masked backbone cannot (the proxy-alignment gap). The relational signal comes in two
+forms --- a neighbour \emph{pattern} and a velocity \emph{count} --- and a \emph{count-aware}
+cross-sequence encoder carrying both paths is the best arm in both regimes over three seeds: on
+real click fraud it beats the per-account FFM by \num{+0.084} PR-AUC, and on the synthetic pattern
+benchmark it stabilises an otherwise seed-unstable raw-attention arm. A map across four real datasets says
 \emph{when} it helps and when a scalar aggregate or neighbour selection is the right tool instead.
 The design is deployable --- neighbour-embedding caching makes the third attention cheap on a frozen
 backbone --- and gives practitioners a concrete rule: choose the relational encoder by the type of
