@@ -94,10 +94,44 @@ def _inject_relational(rng, df, target_rate):
     return pd.concat([df, fr], ignore_index=True)
 
 
+def _inject_pattern(rng, df, target_rate):
+    """Compromised-merchant bursts whose fraud txns carry a CONTENT SIGNATURE, not only a velocity
+    spike. Each merchant normally transacts at a single MCC (= merchant % 20). During a compromise
+    window the fraud txns (spread across MANY random cards) use a DIFFERENT but globally-valid MCC
+    (usual+7 mod 20) and a distinctive amount band. So:
+      - a per-transaction tell is weak: the signature MCC is a normal MCC for *other* merchants, and
+        the amount overlaps the legit range, so no single txn is a giveaway;
+      - the tell is RELATIONAL + CONTENT: it only shows up as an inconsistency with the merchant's
+        recent neighbours (which all sit at the merchant's usual MCC) -- readable by cross-sequence
+        attention over neighbour content, but not by a scalar velocity/mean aggregate.
+    Random fraud cards => a per-sequence model stays blind, exactly as in the count mode."""
+    cards = df["card"].unique()
+    rate_factor = target_rate / (1 - target_rate)
+    rows = []
+    for m, sub in df.groupby("merchant"):
+        f_m = int(round(rate_factor * len(sub)))
+        if f_m < 2:
+            continue
+        sig_mcc = (int(m) + 7) % 20                                    # valid MCC, != this merchant's usual
+        tmin, tmax = int(sub["ts"].min()), int(sub["ts"].max())
+        for _ in range(f_m):
+            # SPREAD over the merchant's timeline (no burst) => velocity is NOT a tell; and amounts
+            # drawn from the legit distribution => no per-txn / mean-amount tell. The ONLY signal is
+            # that this txn's MCC is inconsistent with the merchant's usual MCC -- visible only by
+            # reading the merchant's recent neighbours' content, not from any scalar aggregate.
+            mcc_i = sig_mcc if rng.random() < 0.8 else (int(m) % 20)  # 20% "stealth": no content tell
+            rows.append((int(rng.choice(cards)), int(m), mcc_i,
+                         int(rng.uniform(tmin, tmax)),
+                         float(np.exp(rng.normal(3.2, 1.0))), 1))
+    fr = pd.DataFrame(rows, columns=["card", "merchant", "mcc", "ts", "amount", "is_fraud"])
+    fr["is_fraud"] = fr["is_fraud"].astype(np.int8)
+    return pd.concat([df, fr], ignore_index=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="data/synth_rel/transactions.parquet")
-    ap.add_argument("--mode", choices=["per_card", "relational", "mix"], default="relational")
+    ap.add_argument("--mode", choices=["per_card", "relational", "pattern", "mix"], default="relational")
     ap.add_argument("--relational-frac", type=float, default=0.5, help="mix: fraction relational")
     ap.add_argument("--n-cards", type=int, default=4000)
     ap.add_argument("--n-merchants", type=int, default=400)
@@ -114,6 +148,8 @@ def main():
         df = _inject_per_card(rng, df, args.target_fraud_rate)
     elif args.mode == "relational":
         df = _inject_relational(rng, df, args.target_fraud_rate)
+    elif args.mode == "pattern":
+        df = _inject_pattern(rng, df, args.target_fraud_rate)
     else:
         df = _inject_per_card(rng, df, args.target_fraud_rate * (1 - args.relational_frac))
         df = _inject_relational(rng, df, args.target_fraud_rate * args.relational_frac)

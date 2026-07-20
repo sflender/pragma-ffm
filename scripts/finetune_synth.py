@@ -33,6 +33,10 @@ def main():
     ap.add_argument("--data-dir", required=True)
     ap.add_argument("--tokenizer", required=True)
     ap.add_argument("--preset", default="small")
+    ap.add_argument("--ckpt", default=None,
+                    help="MLM-pretrained checkpoint to initialise the backbone from (real "
+                         "pretrain->finetune). Loaded with strict=False so the xseq encoder + head "
+                         "start fresh. If omitted, trains from scratch (NOT the FFM paradigm).")
     ap.add_argument("--mem", action="store_true")
     ap.add_argument("--d-mem", type=int, default=7)
     ap.add_argument("--xseq", action="store_true",
@@ -67,6 +71,20 @@ def main():
     if args.xseq_count: preset.model.xseq_count_dim = args.count_dim
     L = preset.model.max_seq_len
     model = MiniPragma(tok, preset.model).to(device)
+    if args.ckpt:
+        sd = torch.load(args.ckpt, map_location=device)
+        sd = sd.get("model", sd)
+        miss, unexp = model.load_state_dict(sd, strict=False)
+        loaded = len(sd) - len(unexp)
+        miss_non_xseq = [m for m in miss if not m.startswith(("xseq.", "mem"))]
+        print(f"[ckpt] loaded {loaded}/{len(sd)} tensors from {args.ckpt}; "
+              f"fresh (not in ckpt): {len(miss)} params "
+              f"[{len(miss)-len(miss_non_xseq)} xseq/mem, {len(miss_non_xseq)} other]; "
+              f"unexpected: {len(unexp)}")
+        if miss_non_xseq:
+            print(f"[ckpt] WARNING backbone params missing from ckpt: {miss_non_xseq[:6]}")
+    else:
+        print("[ckpt] none given -> training from scratch (not the pretrain->finetune paradigm)")
     head = nn.Linear(preset.model.d_model, 1).to(device)
     use_amp = args.dtype == "bf16" and device.type == "cuda"
 
