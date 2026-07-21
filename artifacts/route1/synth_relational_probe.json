@@ -1,0 +1,10 @@
+{
+  "arm": "finetune_nomem_frozen",
+  "seed": 0,
+  "data_dir": "data/synth_relational",
+  "n": 16499,
+  "base": 0.027698648402933512,
+  "epochs": 8,
+  "pr_auc": 0.036300393415646545,
+  "roc_auc": 0.5615182874713177
+}
