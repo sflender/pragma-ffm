@@ -69,6 +69,18 @@ TALKINGDATA_FIELDS = [
     ("hour", "cal"),          # derived from ts
 ]
 
+# Retailrocket e-commerce clickstream (NON-FRAUD conversion). SEQUENCE entity = visitor; the shared
+# cross-visitor entity is the ITEM (an item trends/goes viral across many visitors concurrently).
+# Per-event fields are the item (capped bucket, since raw itemid is ~235k) + calendar. No numeric
+# field; dummy amount=0. Label is_fraud reused for is_conversion = (event in {addtocart,transaction}).
+# The event TYPE is deliberately NOT a field (it is the label source). Full item id kept separately
+# as `item_id` for the cross-sequence memory/neighbours.
+RETAILROCKET_FIELDS = [
+    ("item", "cat"),          # capped item bucket (top-N + OOV)
+    ("hour", "cal"),
+    ("dow", "cal"),
+]
+
 CAL_SIZES = {"hour": 24, "dow": 7}
 
 SCHEMAS = {
@@ -76,6 +88,7 @@ SCHEMAS = {
     "ieee_cis": IEEE_CIS_FIELDS,
     "synth": SYNTH_FIELDS,
     "talkingdata": TALKINGDATA_FIELDS,
+    "retailrocket": RETAILROCKET_FIELDS,
 }
 
 
