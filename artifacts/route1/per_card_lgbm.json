@@ -2,7 +2,15 @@
   "data_dir": "/tmp/r1/synth_per_card",
   "n_test": 16443,
   "base_rate": 0.02438727726084048,
-  "pr_auc": 0.07670372816644358,
-  "roc_auc": 0.8237601669681923,
-  "n_features": 11
+  "pr_auc": 0.849083667147926,
+  "roc_auc": 0.9637426195140499,
+  "n_features": 16,
+  "top_features": [
+    "card_recency",
+    "card_meanamt",
+    "amount",
+    "merch3",
+    "merch2",
+    "merch0"
+  ]
 }

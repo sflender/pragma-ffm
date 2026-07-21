@@ -2,7 +2,15 @@
   "data_dir": "/tmp/r1/synth_relational",
   "n_test": 16499,
   "base_rate": 0.027698648402933512,
-  "pr_auc": 0.5867851836420509,
-  "roc_auc": 0.9390436264542992,
-  "n_features": 11
+  "pr_auc": 0.5979019558784874,
+  "roc_auc": 0.9441370668952423,
+  "n_features": 16,
+  "top_features": [
+    "merch0",
+    "merch2",
+    "merch1",
+    "merch3",
+    "card_recency",
+    "hour"
+  ]
 }
