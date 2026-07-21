@@ -1,0 +1,10 @@
+{
+  "arm": "finetune_nomem",
+  "seed": 0,
+  "data_dir": "data/rr_seq",
+  "n": 168940,
+  "base": 0.11211080857109033,
+  "epochs": 6,
+  "pr_auc": 0.4673872006622944,
+  "roc_auc": 0.8360695371348116
+}
