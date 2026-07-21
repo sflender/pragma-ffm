@@ -58,6 +58,8 @@ def main():
     ap.add_argument("--dtype", default="bf16")
     ap.add_argument("--out", default="artifacts/finetune_synth.json")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--num-workers", type=int, default=4,
+                    help="DataLoader worker processes (0 = main thread; >0 removes the data-load bottleneck)")
     args = ap.parse_args()
 
     t0 = time.time()
@@ -123,7 +125,9 @@ def main():
     model.train()
     for ep in range(args.epochs):
         tot = 0.0; n = 0
-        for b in DataLoader(tr_ds, batch_size=args.batch_size, shuffle=True, drop_last=True):
+        for b in DataLoader(tr_ds, batch_size=args.batch_size, shuffle=True, drop_last=True,
+                            num_workers=args.num_workers, pin_memory=True,
+                            persistent_workers=args.num_workers > 0):
             b = to_device(b, device)
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_amp):
                 logit = fwd(b); loss = lossfn(logit, b["label"].float())
