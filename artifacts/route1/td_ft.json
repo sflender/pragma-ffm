@@ -1,0 +1,10 @@
+{
+  "arm": "finetune_nomem",
+  "seed": 0,
+  "data_dir": "data/td_seq",
+  "n": 152598,
+  "base": 0.017025124837809144,
+  "epochs": 6,
+  "pr_auc": 0.6777803578353034,
+  "roc_auc": 0.9682266063638697
+}
