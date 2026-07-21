@@ -1,0 +1,10 @@
+{
+  "arm": "finetune_xseq",
+  "seed": 2,
+  "data_dir": "data/synth_per_card",
+  "n": 16443,
+  "base": 0.02438727726084048,
+  "epochs": 8,
+  "pr_auc": 0.8180640630892456,
+  "roc_auc": 0.9593465842935361
+}
