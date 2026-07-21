@@ -1,0 +1,10 @@
+{
+  "arm": "finetune_nomem",
+  "seed": 0,
+  "data_dir": "data/processed_ieee",
+  "n": 58627,
+  "base": 0.041533764306548177,
+  "epochs": 6,
+  "pr_auc": 0.1673656429230211,
+  "roc_auc": 0.7647593810075635
+}
