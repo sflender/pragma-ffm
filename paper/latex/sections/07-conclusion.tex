@@ -1,0 +1,13 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+Financial foundation models rest on two attentions --- within an event and across an account's own
+history --- and are structurally blind to relational signal that lives in a shared entity's activity
+across other accounts. We showed that a \emph{third} attention, a cross-sequence encoder added at
+fine-tuning time, recovers this signal: it yields a consistent \num{+0.04} to \num{+0.07} \prauc{}
+gain over standard fine-tuning across two fraud datasets and a non-fraud e-commerce task, collapses
+to no gain on a synthetic control with no relational signal, and on one dataset beats a strong
+gradient-boosted-tree baseline. Because it is a composable adapter over an unchanged backbone and
+generalises beyond fraud, the third attention is a practical route to relational financial foundation
+models. Pretraining it with a relational objective, and extending it with neighbour selection and
+multi-hop structure, are promising next steps.

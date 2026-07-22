@@ -1,0 +1,49 @@
+\section{Results}
+\label{sec:results}
+
+\begin{table}[t]
+\centering
+\caption{Main result: \prauc{} on the stratified evaluation subsample (single seed). Columns are the
+GBDT baseline and the three adaptation strategies of the \emph{same} pretrained backbone. $\Delta$ is
+the gain of the third attention over standard fine-tuning. \textbf{Bold} marks the best adaptation
+arm; \textsuperscript{$\ast$} marks where it also beats the GBDT.}
+\label{tab:main}
+\small
+\begin{tabular}{lcccc c}
+\toprule
+Dataset & GBDT & probe & fine-tune & \makecell{fine-tune\\$+$ cross-attn} & $\Delta$ \\
+\midrule
+Synthetic (control) & $0.849$ & $0.793$ & $\mathbf{0.829}$ & $0.823$ & $-0.006$ \\
+TalkingData         & $0.405$ & $0.486$ & $0.678$ & $\mathbf{0.714}^{\ast}$ & $+0.036$ \\
+IEEE-CIS            & $0.294$ & $0.163$ & $0.167$ & $\mathbf{0.230}$ & $+0.063$ \\
+Retailrocket        & $0.630$ & $0.344$ & $0.467$ & $\mathbf{0.534}$ & $+0.067$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\input{figures/results}
+
+Table~\ref{tab:main} and Figure~\ref{fig:results} report the full result. Three findings.
+
+\paragraph{The third attention gives a consistent relational gain.} On all three datasets that
+contain a cross-account signal, adding cross-sequence attention improves \prauc{} over standard
+fine-tuning of the same backbone --- \num{+0.036} on TalkingData, \num{+0.063} on IEEE-CIS, and
+\num{+0.067} on Retailrocket. The ordering probe $\to$ fine-tune $\to$ fine-tune$+$cross-attention is
+monotonic in every case: unfreezing the backbone helps, and the third attention helps further.
+
+\paragraph{The gain is the relational signal, not added capacity.} On the synthetic control --- where
+the fraud is per-account by construction and no relational signal exists at the shared entity --- the
+\emph{same} added module yields no gain (\num{-0.006}; fine-tune \num{0.829} vs.\ cross-attention
+\num{0.823}). Identical extra parameters that lift the three relational datasets do nothing here.
+This isolates the improvement as cross-sequence information rather than model capacity, and doubles
+as a specificity check: the module does not spuriously inflate a task it should not help.
+
+\paragraph{It can beat a strong GBDT, and generalises beyond fraud.} On TalkingData the fine-tuned
+FFM with the third attention reaches \num{0.714}, clearing the strong GBDT baseline (\num{0.405}):
+here the FFM models a user's own click sequence, a signal the tree lacks, and the third attention
+adds the cross-user IP signal on top. On IEEE-CIS and Retailrocket the FFM trails the GBDT
+(\num{0.230} vs.\ \num{0.294}; \num{0.534} vs.\ \num{0.630}) --- there the relational signal is close
+to a scalar velocity that a tree exploits efficiently (\S\ref{sec:discussion}) --- yet the third
+attention still delivers its relational lift. Notably Retailrocket is a \emph{non-fraud} conversion
+task: the same module, unchanged, recovers the ``item trending now'' signal, showing the approach is
+not fraud-specific.

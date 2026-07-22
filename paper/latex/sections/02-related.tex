@@ -1,0 +1,32 @@
+\section{Related work}
+\label{sec:related}
+
+\paragraph{Event-sequence and tabular transformers.} Encoder-only, masked-pretrained
+transformers~\cite{vaswani2017attention,devlin2019bert} over tokenised tabular/event sequences are
+well established: BEHRT for medical records~\cite{li2020behrt} and TabBERT/TabFormer for
+transactions~\cite{padhi2021tabular} introduced the hierarchical field-then-sequence design our
+backbone follows, and related tabular transformers add contextual and row-attention
+encodings~\cite{huang2020tabtransformer,somepalli2021saint,gorishniy2022embeddings}. The neural
+architecture we build on is therefore not itself novel; our object of study is what the
+\emph{two-attention} recipe misses relationally, and how to add it cheaply.
+
+\paragraph{Industrial financial foundation models.} Two recent industrial systems are the closest
+prior work. PRAGMA~\cite{ostroukhov2026pragma} pretrains a masked transformer on heterogeneous
+banking event sequences and serves credit scoring, fraud, and lifetime-value prediction from one
+representation read by a linear probe or a light fine-tune --- the recipe we reproduce at
+laptop scale. TREASURE~\cite{yeh2025treasure} encodes payment-network transactions with dedicated
+static/dynamic modules and ingests payment-network signals alongside consumer behaviour. Both encode
+a \emph{single entity's own event stream}; neither reads, at inference, the concurrent activity of a
+shared entity across \emph{other} accounts. Our cross-sequence attention is orthogonal and composable
+--- it augments such a backbone rather than replacing it.
+
+\paragraph{Adaptation: probing vs.\ fine-tuning.} Adapting a pretrained encoder ranges from a frozen
+linear probe over its embeddings to full fine-tuning. A frozen probe measures what the
+self-supervised objective already preserved; fine-tuning lets the task reshape the backbone. We use
+both as baselines and show that the relational signal is recovered only when the third attention is
+present, whether frozen features are read or the backbone is fine-tuned.
+
+\paragraph{GBDTs for fraud.} Gradient-boosted trees~\cite{ke2017lightgbm,chen2016xgboost} with
+client- and entity-level aggregate features remain the production and competition standard for
+tabular fraud, and are a demanding baseline; we compare against a strong GBDT given per-entity causal
+aggregates on the identical evaluation subsample.

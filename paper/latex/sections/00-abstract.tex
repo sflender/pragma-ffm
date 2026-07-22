@@ -1,23 +1,15 @@
-Financial foundation models (FFMs) --- masked-pretrained, encoder-only transformers over
-per-account event sequences, adapted with a lightweight head --- have been proposed to
-replace the hand-engineered features and gradient-boosted decision trees (GBDTs) that
-dominate production fraud detection. Such models use \emph{two} attentions: one over the
-fields of an event, and one over an account's own event history. We show this design is
-\emph{structurally blind} to \emph{relational} fraud --- patterns that live in a shared
-entity's activity \emph{across} accounts (a compromised merchant hit by many cards; a
-fraud-farm IP driving many devices) --- which no per-account model can see. We add a
-\emph{third}, cross-sequence attention and study when it helps. On a controlled synthetic
-benchmark with ground-truth signal placement, a per-account FFM collapses to the base rate
-on relational fraud while the cross-sequence encoder recovers it. Across four real datasets
-we then map \emph{when} it helps: the relational signal is sometimes a \emph{pattern} in a
-neighbour's raw events (where attention over neighbours wins) and sometimes a \emph{count}
---- a velocity magnitude a scalar aggregate captures losslessly but a bounded attention
-window truncates. We reconcile the two with a \emph{count-aware} cross-sequence encoder that
-carries both a raw-neighbour attention path and a log-count magnitude readout. A single such
-module is the best arm in \emph{both} regimes over three seeds: on real click fraud (TalkingData)
-it beats the per-account FFM by \num{+0.084} PR-AUC ($0.700\pm0.011$ vs.\ $0.616\pm0.013$), and on
-the synthetic benchmark it \emph{stabilises} an otherwise wildly seed-unstable raw-attention arm
-($0.318\pm0.010$ vs.\ $0.252\pm0.117$). We close with the productization
-levers this enables --- neighbour-embedding caching for a frozen backbone, and the count vs.\
-pattern taxonomy that tells practitioners which relational encoder a given fraud problem
-needs.
+Financial foundation models (FFMs) pretrain a transformer on raw event sequences and adapt it to
+downstream tasks such as fraud detection with a lightweight head. Architecturally they rest on
+\emph{two} attentions: one \emph{within} an event, over its fields, and one \emph{across} an
+account's own history. This makes them structurally blind to \emph{relational} signal that lives in
+a shared entity's activity \emph{across other accounts} --- a merchant compromised right now, an IP
+driving many devices, a product going viral. We add a \emph{third} attention: a cross-sequence
+encoder that, at \emph{fine-tuning time}, lets a target event attend over the recent events of its
+shared entity from other sequences. Across four datasets --- a controlled synthetic benchmark, two
+public fraud corpora (TalkingData, IEEE-CIS), and a non-fraud e-commerce conversion task
+(Retailrocket) --- the third attention yields a consistent \num{+0.04} to \num{+0.07} \prauc{} gain
+over standard fine-tuning wherever a relational signal exists, and \emph{collapses to a zero gain}
+on a synthetic control that contains no relational signal --- isolating the improvement as
+cross-sequence information rather than added model capacity. On TalkingData it further beats a
+strong gradient-boosted-tree baseline. Because the module is added at adaptation and generalises
+beyond fraud, it offers a practical, composable route to relational FFMs.

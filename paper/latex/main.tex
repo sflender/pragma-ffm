@@ -1,8 +1,6 @@
-%% ICAIF '26 (Milan) submission — ACM sigconf, DOUBLE-BLIND (confirmed on the CFP).
-%% Hard limit: 8 pages TOTAL incl. figures AND references. No appendix/supplementary allowed.
-%% `review` adds line numbers for reviewers; `anonymous` strips author identity.
+%% ICAIF '26 submission — ACM sigconf, DOUBLE-BLIND.
+%% Hard limit: 8 pages incl. figures AND references.
 \documentclass[sigconf,anonymous,review,nonacm]{acmart}
-%% Camera-ready: drop `anonymous,review`, remove `nonacm`, fill the rights block + real authors.
 
 \settopmatter{printacmref=false}
 \setcopyright{none}
@@ -10,10 +8,10 @@
 \pagestyle{plain}
 
 \usepackage{booktabs}
+\usepackage{makecell}
 \usepackage{amsmath}
 \usepackage{graphicx}
 \usepackage{xcolor}
-\usepackage{subcaption}
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
 \usepackage{pgfplots}
@@ -21,14 +19,13 @@
 \usepackage{algorithm}
 \usepackage{algpseudocode}
 
-% draft helpers (strip before submission)
-\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
-\newcommand{\num}[1]{#1}   % wrap final numbers so they are easy to grep/update
+\newcommand{\prauc}{PR-AUC}
+\newcommand{\num}[1]{#1}   % lightweight number wrapper (grep-able); avoids siunitx dependency
 
 \begin{document}
 
-\title{When Two Attentions Aren't Enough: Count- and Pattern-Aware
-Cross-Sequence Encoding for Relational Fraud in Financial Foundation Models}
+\title{Financial Foundation Models with a Third Attention:\\
+Recovering Relational Signal at Fine-Tuning Time}
 
 \author{Anonymous Author(s)}
 \affiliation{\institution{Anonymous Institution}\country{}}
@@ -37,21 +34,18 @@ Cross-Sequence Encoding for Relational Fraud in Financial Foundation Models}
 \input{sections/00-abstract}
 \end{abstract}
 
-\keywords{financial foundation models, fraud detection, event-sequence
-transformers, relational learning, gradient-boosted trees}
+\keywords{financial foundation models, fraud detection, event-sequence transformers,
+relational learning, cross-attention, gradient-boosted trees}
 
 \maketitle
 
 \input{sections/01-intro}
-\input{sections/02-background}
+\input{sections/02-related}
 \input{sections/03-method}
-\input{sections/04-ffm-vs-gbdt}
-\input{sections/05-synthetic}
-\input{sections/06-realdata}
-\input{sections/07-boundary}
-\input{sections/08-productization}
-\input{sections/09-limitations}
-\input{sections/10-conclusion}
+\input{sections/04-data}
+\input{sections/05-results}
+\input{sections/06-discussion}
+\input{sections/07-conclusion}
 
 \bibliographystyle{ACM-Reference-Format}
 \bibliography{refs}

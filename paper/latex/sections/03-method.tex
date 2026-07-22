@@ -1,90 +1,119 @@
-\section{Three attentions for relational fraud}
+\section{Method}
 \label{sec:method}
 
 \input{figures/arch}
 
-\subsection{The two-attention FFM}
-We reproduce a standard FFM at laptop scale (\num{3}--\num{14}M parameters). Each event is a set
-of key--value tokens; an \textbf{event encoder} (a set transformer with a learned \texttt{[EVT]}
-token, no positional encoding) contextualises the fields and emits a per-event vector. A
-\textbf{history encoder} (a bidirectional transformer with rotary positional
-encoding~\cite{su2021roformer} on
-\emph{continuous event time}) runs over an account's \texttt{[EVT]} sequence and emits a record
-embedding per event. Pretraining masks and reconstructs $(\textrm{field},\textrm{value})$ tokens;
-adaptation reads the final-position embedding with a linear or shallow head, evaluated
-as-of-date (a window ending at each target event, no future leakage). These are the two
-attentions --- within an event, and across an account's own history.
+\subsection{The two-attention FFM backbone}
+\label{sec:method:backbone}
+We reproduce a standard FFM at laptop scale ($\approx$\num{10}M parameters).
 
-\subsection{The cross-sequence encoder (third attention)}
-A per-account model is blind to a shared entity's cross-account state. We add a third attention.
-For a target event on account $a$ at shared entity $e$ (merchant, IP, \dots) and time $t$, with
-record embedding $q=h_t\in\mathbb{R}^{d}$ from the history encoder, we gather the neighbour set
-$\mathcal{N}_{e,t}=\{$the last $K$ events at $e$ with time ${<}\,t\}$ (causal, across \emph{all}
-accounts; $|\mathcal{N}_{e,t}|\le K$). Each neighbour event $j$ is encoded by the \emph{shared}
-event encoder $E(\cdot)$ into its \texttt{[EVT]} token $\mathbf{z}_j=E(x_j)\in\mathbb{R}^{d}$, to
-which we add a learned recency embedding of its lag, $\tilde{\mathbf{z}}_j=\mathbf{z}_j+\rho\!\big(\log(t-t_j)\big)$;
-an optional shallow transformer $T$ mixes the $K$ neighbours, $\{\mathbf{n}_j\}=T(\{\tilde{\mathbf{z}}_j\})$.
-The target \emph{queries} them by multi-head cross-attention with a padding mask $m_j$
-($0$ for a real neighbour, a large negative constant for padding),
+\paragraph{Tokenisation.} Each event (a transaction, click, or page view) is a set of
+$(\textrm{field},\textrm{value})$ pairs. Categorical values are mapped to per-field vocabularies;
+numeric values (e.g.\ amount) are discretised into learned buckets; two calendar fields (hour of
+day, day of week) are derived from the event timestamp. A learned \texttt{[EVT]} token is prepended
+to each event's token set.
+
+\paragraph{Two attentions.} An \textbf{event encoder} --- a set transformer with no positional
+encoding --- contextualises an event's field tokens and returns its \texttt{[EVT]} vector, a
+per-event embedding. A \textbf{history encoder} --- a bidirectional transformer with rotary
+positional encoding~\cite{su2021roformer} on \emph{continuous event time} --- runs over an account's
+sequence of \texttt{[EVT]} vectors and returns a record embedding $h_t$ per event. These are the two
+attentions: within an event, and across an account's own history.
+
+\paragraph{Pretraining.} We pretrain with masked modelling: a fraction of $(\textrm{field},
+\textrm{value})$ tokens are masked and reconstructed by per-field heads, a self-supervised objective
+requiring no labels. Concretely the backbone has $d_{\text{model}}{=}\num{256}$, \num{8} attention
+heads, feed-forward width \num{1024}, and a context window of \num{128} events. We train each
+dataset's backbone for \num{30000} steps with AdamW~\cite{loshchilov2019adamw}, a peak learning rate
+of \num{3e-4}, \num{500} warm-up steps and cosine decay, batch size \num{128}, in \texttt{bf16} on a
+single NVIDIA L40S GPU. Figure~\ref{fig:loss} shows the masked-modelling loss plateauing on every
+dataset, confirming the backbone is converged before any adaptation.
+
+\input{figures/loss}
+
+\subsection{The third attention: a cross-sequence encoder}
+\label{sec:method:xseq}
+A per-account model never sees a shared entity's cross-account state. We add a third attention that
+supplies exactly this. For a target event on account $a$ at shared entity $e$ (merchant, IP, item)
+and time $t$, with record embedding $q{=}h_t\in\mathbb{R}^d$ from the history encoder, we gather the
+neighbour set $\mathcal{N}_{e,t}=\{$the last $K$ events at $e$ with time strictly ${<}\,t\}$ ---
+causal, across \emph{all} accounts, $|\mathcal{N}_{e,t}|\le K$. Each neighbour event $j$ is encoded
+by the \emph{shared} event encoder $E$ into its \texttt{[EVT]} token, to which we add a learned
+recency embedding of its lag:
+\begin{equation}
+\mathbf{z}_j \;=\; E(x_j) + \rho\!\big(\log(t-t_j)\big).
+\end{equation}
+An optional shallow transformer $T$ mixes the $K$ neighbours, $\{\mathbf{n}_j\}=T(\{\mathbf{z}_j\})$.
+The target \emph{queries} them by multi-head cross-attention with a padding mask $m_j$ ($0$ for a
+real neighbour, $-\infty$ for padding):
 \begin{align}
-Q &= W_Q\,q, \quad K_j = W_K\,\mathbf{n}_j, \quad V_j = W_V\,\mathbf{n}_j, \\
-\alpha_j &= \operatorname{softmax}_j\!\Big(\tfrac{Q^{\top}K_j}{\sqrt{d_h}} + m_j\Big), \qquad
-u = \textstyle\sum_j \alpha_j\,V_j,
+Q &= W_Q\,q,\quad K_j = W_K\,\mathbf{n}_j,\quad V_j = W_V\,\mathbf{n}_j,\\
+\alpha_j &= \operatorname{softmax}_j\!\Big(\tfrac{Q^{\top}K_j}{\sqrt{d_h}} + m_j\Big),\qquad
+u = \textstyle\sum_j \alpha_j\,V_j .
 \end{align}
-and the \emph{pattern} output is $p=\mathbb{1}[\,\mathcal{N}_{e,t}\neq\varnothing\,]\cdot
-\operatorname{LayerNorm}(W_O\,u)$ --- zeroed for a target with no in-window neighbour, so a
-no-neighbour row contributes an exact zero rather than a masked-softmax NaN. Neighbours are the
-most recent $K$ prior events at $e$ (temporal recency, not similarity selection); their embeddings
-are recomputed each step so gradients flow into the shared encoder $E$
-(\S\ref{sec:productization} discusses caching).
-
-\subsection{Count vs.\ pattern, and the count-aware readout}
-\label{sec:method:countaware}
-Relational fraud signal comes in two forms. Sometimes it is a \emph{pattern} in the neighbours'
-raw events --- the structure of a compromise burst --- which attention over raw \texttt{[EVT]}
-tokens captures and a fixed summary vector cannot. Sometimes it is a \emph{count}: a velocity
-\emph{magnitude} (e.g.\ 700 clicks/hour on a fraud IP) that a scalar log-count encodes losslessly
-but a bounded-$K$ attention window \emph{truncates} --- the $K$ most-recent neighbours span a tiny
-interval and cannot represent ``how many.'' A rank-1 memory that reads a precomputed windowed
-velocity captures the count but not the pattern; raw-neighbour attention captures the pattern but
-not the count.
-
-We unify them. The \textbf{count-aware cross-sequence encoder} carries both the pattern path $p$
-above \emph{and} an always-on readout of a precomputed magnitude signal $c\in\mathbb{R}^{d_c}$
-(a windowed log-velocity), through a small projection $g(c)=\operatorname{LN}(\operatorname{GELU}(W_c\,c))$
-added to the pattern output; the encoder returns the residual added to the target embedding,
-\begin{align}
-\operatorname{xseq}(q,\{\mathbf{n}_j\},c) &\;=\;
-\underbrace{p}_{\text{pattern}} \;+\; \underbrace{g(c)}_{\text{count}}, \\
-h_t' &\;=\; h_t + \operatorname{xseq}.
-\end{align}
-The count term $g(c)$ is applied even when a target has no in-window neighbour (then $p=0$), so
-magnitude is never lost to $K$-truncation. One module thus behaves like raw attention when the
-signal is pattern-type and like a velocity readout when it is count-type (\S\ref{sec:realdata});
-setting $g\equiv 0$ recovers the pattern-only cross-sequence encoder, and dropping the attention
-path recovers the rank-1 count memory --- the two ablation arms in Table~\ref{tab:main}.
+The attention output is used only when the target has at least one in-window neighbour, so an
+empty neighbourhood contributes an exact zero rather than a masked-softmax NaN:
+\begin{equation}
+p \;=\; \mathbb{1}\!\left[\mathcal{N}_{e,t}\neq\varnothing\right]\cdot
+\operatorname{LayerNorm}\!\big(W_O\,u\big).
+\end{equation}
+Alongside the attention path, the encoder carries an always-on readout of a precomputed,
+causal windowed velocity $c\in\mathbb{R}^{d_c}$ of the shared entity (the log count of prior
+same-entity events within fixed time windows), projected and added:
+\begin{equation}
+\operatorname{xseq}(q,\{\mathbf{n}_j\},c) \;=\; p \;+\; \operatorname{LN}\!\big(\operatorname{GELU}(W_c\,c)\big),
+\qquad h_t' = h_t + \operatorname{xseq} .
+\end{equation}
+The result is a residual added to the target's record embedding, which the head then reads
+(Algorithm~\ref{alg:xseq}). The two internal paths --- attention over raw neighbours and the velocity
+readout --- are complementary; we treat the module as a single unit and leave a formal decomposition
+of their contributions to future work. Neighbours are the most recent $K$ prior events at $e$
+(temporal recency, not similarity selection); their embeddings are recomputed each step so gradients
+flow into the shared encoder. Throughout we use $K{=}\num{16}$, one mixing layer, and $d_c{=}\num{2}$
+velocity windows.
 
 \begin{algorithm}[t]
-\caption{Count-aware cross-sequence encoding of one target event}
+\caption{Cross-sequence attention for one target event}
 \label{alg:xseq}
 \begin{algorithmic}[1]
-\Require target embed.\ $q{=}h_t$, entity $e$, time $t$, magnitude $c$, window $K$
+\Require target embed.\ $q{=}h_t$, entity $e$, time $t$, velocity $c$, window $K$; shared encoder $E$
 \State $\mathcal{N} \gets$ last $K$ events at $e$ with time ${<}\,t$ \Comment{causal, all accounts}
 \If{$\mathcal{N}=\varnothing$} \State $p \gets \mathbf{0}$
 \Else
-  \For{$j \in \mathcal{N}$}
-    \State $\mathbf{z}_j \gets E(x_j) + \rho(\log(t-t_j))$ \Comment{shared encoder $+$ recency}
-  \EndFor
-  \State $\{\mathbf{n}_j\} \gets T(\{\mathbf{z}_j\})$ \Comment{optional shallow mix}
-  \State $p \gets \operatorname{LN}\!\big(W_O\operatorname{MHA}(q,\{\mathbf{n}_j\})\big)$
-  \Comment{target queries neighbours}
+  \For{$j \in \mathcal{N}$} \State $\mathbf{z}_j \gets E(x_j) + \rho(\log(t-t_j))$ \EndFor
+  \State $p \gets \operatorname{LN}\!\big(W_O\,\operatorname{MHA}(q,\,T(\{\mathbf{z}_j\}))\big)$
 \EndIf
-\State \Return $h_t + p + \operatorname{LN}(\operatorname{GELU}(W_c\,c))$ \Comment{count path always on}
+\State \Return $h_t + p + \operatorname{LN}(\operatorname{GELU}(W_c\,c))$
 \end{algorithmic}
 \end{algorithm}
 
-\subsection{Baselines and evaluation}
-We compare against a GBDT (LightGBM~\cite{ke2017lightgbm}) over per-transaction features including causal entity
-aggregates, evaluated on the \emph{same} stratified subsample as the FFM so the numbers sit on one
-axis. Given extreme class imbalance we report PR-AUC (average precision) as the headline, with
-ROC-AUC alongside.
+\subsection{Adaptation strategies}
+\label{sec:method:adapt}
+We evaluate three ways to adapt the pretrained backbone to a binary target, plus the tabular baseline
+below. All read the target event's final record embedding with a single linear head
+($\mathbb{R}^{d}\!\to\!\mathbb{R}$) and train a class-weighted binary cross-entropy over as-of-date
+windows (a window ending at each target event, no future leakage), with AdamW at learning rate
+\num{3e-4}, \texttt{bf16}, a single seed.
+\begin{itemize}
+\item \textbf{Linear probe.} The backbone is \emph{frozen}; only the linear head is trained. This
+measures what masked pretraining already preserved.
+\item \textbf{Fine-tune.} The backbone is unfrozen and trained end-to-end with the head. This lets
+the task reshape the two-attention representation.
+\item \textbf{Fine-tune $+$ cross-attention.} The third attention (\S\ref{sec:method:xseq}) is added
+and the whole model --- backbone, cross-sequence encoder, and head --- is fine-tuned end-to-end from
+the same checkpoint. The cross-sequence encoder's weights are randomly initialised (it is not part of
+pretraining) and learned during adaptation.
+\end{itemize}
+We fine-tune for \num{8} epochs on the synthetic data and \num{6} on the larger real corpora, with
+batch size \num{128} (synthetic) or \num{256} (real).
+
+\subsection{Gradient-boosted-tree baseline}
+\label{sec:method:gbdt}
+As a strong tabular reference we train LightGBM~\cite{ke2017lightgbm} (\num{400} trees, \num{64}
+leaves, learning rate \num{0.05}, subsample and column-sample \num{0.8}, class-balanced) on the same
+stratified evaluation subsample as the FFM, so \prauc{} is apples-to-apples. Its features are the
+per-event fields the event encoder sees \emph{plus} the standard causal aggregates a practitioner
+engineers for both the sequence entity and the shared entity: prior count, windowed velocity, mean
+amount, and recency (seconds since that entity's previous event). It is not given raw entity ids,
+which would leak a label-derived per-entity rate. Given extreme class imbalance we report \prauc{}
+(average precision) throughout.

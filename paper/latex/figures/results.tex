@@ -1,38 +1,28 @@
-% Count/pattern duality figure (pgfplots). Numeric x + manual ticklabels so
-% explicit y-error tuples (+- (0,std)) parse cleanly (symbolic x coords do not).
+% Main results — grouped bars: GBDT + three adaptation arms per dataset (single seed, PR-AUC).
 \begin{figure}[t]
 \centering
-\begin{subfigure}{0.49\linewidth}\centering
 \begin{tikzpicture}
-\begin{axis}[width=\linewidth, height=4.2cm, ybar, bar width=7pt,
-  ymin=0, ymax=0.45, ylabel={PR-AUC}, ylabel near ticks,
-  xmin=0.5, xmax=4.5, xtick={1,2,3,4},
-  xticklabels={FFM,+mem,+xseq,+CA}, x tick label style={rotate=30,anchor=east,font=\scriptsize},
-  title={\scriptsize Synthetic (pattern)}, title style={yshift=-1ex}]
-\addplot+[fill=blue!25, draw=blue!55, error bars/.cd, y dir=both, y explicit] coordinates {
-  (1,0.039) +- (0,0.004) (2,0.088) +- (0,0.009)
-  (3,0.252) +- (0,0.117) (4,0.318) +- (0,0.010)};
+\begin{axis}[width=\linewidth, height=5cm, ybar, bar width=5pt,
+  ymin=0, ymax=0.92, ylabel={PR-AUC}, ylabel near ticks,
+  symbolic x coords={Synthetic, TalkingData, IEEE-CIS, Retailrocket},
+  xtick=data, x tick label style={font=\scriptsize}, tick label style={font=\scriptsize},
+  enlarge x limits=0.15, label style={font=\small},
+  legend style={font=\scriptsize, at={(0.5,1.02)}, anchor=south, legend columns=4, draw=none, fill=none},
+  legend cell align=left]
+\addplot[fill=gray!35, draw=gray!60] coordinates {(Synthetic,0.849)(TalkingData,0.405)(IEEE-CIS,0.294)(Retailrocket,0.630)};
+\addlegendentry{GBDT}
+\addplot[fill=blue!15, draw=blue!45] coordinates {(Synthetic,0.793)(TalkingData,0.486)(IEEE-CIS,0.163)(Retailrocket,0.344)};
+\addlegendentry{probe}
+\addplot[fill=blue!40, draw=blue!70] coordinates {(Synthetic,0.829)(TalkingData,0.678)(IEEE-CIS,0.167)(Retailrocket,0.467)};
+\addlegendentry{fine-tune}
+\addplot[fill=orange!55, draw=orange!80] coordinates {(Synthetic,0.823)(TalkingData,0.714)(IEEE-CIS,0.230)(Retailrocket,0.534)};
+\addlegendentry{$+$ cross-attn}
 \end{axis}
 \end{tikzpicture}
-\end{subfigure}\hfill
-\begin{subfigure}{0.49\linewidth}\centering
-\begin{tikzpicture}
-\begin{axis}[width=\linewidth, height=4.2cm, ybar, bar width=7pt,
-  ymin=0.55, ymax=0.73, ylabel={PR-AUC}, ylabel near ticks,
-  xmin=0.5, xmax=4.5, xtick={1,2,3,4},
-  xticklabels={FFM,+mem,+xseq,+CA}, x tick label style={rotate=30,anchor=east,font=\scriptsize},
-  title={\scriptsize TalkingData (count)}, title style={yshift=-1ex}]
-\addplot+[fill=orange!35, draw=orange!70, error bars/.cd, y dir=both, y explicit] coordinates {
-  (1,0.616) +- (0,0.013) (2,0.672) +- (0,0.009)
-  (3,0.619) +- (0,0.004) (4,0.700) +- (0,0.011)};
-\end{axis}
-\end{tikzpicture}
-\end{subfigure}
-\caption{Count vs.\ pattern, and the unifying fix (PR-AUC, mean\,$\pm$\,std, 3 seeds).
-\textbf{Left (synthetic, pattern signal):} raw-neighbour attention (\texttt{+xseq}) has a high mean
-but is wildly seed-unstable; the count-aware encoder (\texttt{+CA}) is stable and highest.
-\textbf{Right (TalkingData, count signal):} \texttt{+xseq} alone barely moves over the per-account
-FFM (a bounded window truncates a velocity magnitude), the memory (count) path helps, and
-\texttt{+CA} wins. One module (\texttt{+CA}) is best in both regimes. Note the different $y$-ranges.}
+\caption{Main results (PR-AUC, single seed). Within each dataset, probe $\to$ fine-tune $\to$
+$+$cross-attention is monotonic on the three relational datasets and flat on the synthetic control
+(no relational signal). The third attention beats the GBDT on TalkingData; on IEEE-CIS and
+Retailrocket it lifts the FFM but the GBDT remains ahead. Base rates differ across datasets, so bars
+are comparable within a dataset, not across.}
 \label{fig:results}
 \end{figure}

@@ -23,8 +23,7 @@
 % cross-sequence (third attention) below
 \node[box, fill=gray!8, below=9mm of evt] (nbr) {last-$K$ neighbour\\events at shared\\entity (other accts.)};
 \node[att, right=of nbr, minimum height=10mm] (xseq)
-  {Cross-Sequence Encoder {\scriptsize(attn 3)}\\[1pt]
-   {\scriptsize pattern (attn) $+$ log-count}};
+  {Cross-Sequence Encoder\\{\scriptsize the third attention (attn 3)}};
 \draw[ar] (nbr) -- (xseq);
 \draw[ar, dashed] (nbr.north) to[out=90,in=180] (evt.west|-nbr.north) ;
 \draw[ar] (evt.south) to[out=-90,in=180] ([yshift=2mm]xseq.west);
@@ -38,6 +37,6 @@
 \caption{A standard FFM has \emph{two} attentions: over an event's fields (Event Encoder) and over
 an account's own history (History Encoder). We add a \emph{third}: a Cross-Sequence Encoder that
 attends over a shared entity's recent events from \emph{other} accounts, encoded by the same Event
-Encoder, with a pattern (attention) path and an always-on log-count (magnitude) path.}
+Encoder, and adds the result as a residual to the target's record embedding.}
 \label{fig:arch}
 \end{figure}

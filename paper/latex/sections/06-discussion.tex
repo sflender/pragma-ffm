@@ -1,0 +1,45 @@
+\section{Discussion}
+\label{sec:discussion}
+
+\paragraph{Two attentions are not enough.} A standard FFM attends within an event and across an
+account's own history, and is therefore blind to a shared entity's cross-account state. Our results
+show this is a real and recoverable gap: across three datasets with a relational signal, a
+cross-sequence attention added \emph{at fine-tuning time} improves \prauc{} by \num{+0.04} to
+\num{+0.07} over fine-tuning the identical backbone, while adding the same module to a control with no
+relational signal changes nothing. Adapting the backbone with a third attention is thus an efficient,
+low-friction way to make an existing FFM relational --- no change to the pretraining recipe, just a
+different adaptation choice.
+
+\paragraph{When the FFM beats the tree, and when it does not.} The FFM with the third attention beats
+a strong GBDT on TalkingData but trails it on IEEE-CIS and Retailrocket. The pattern is consistent: a
+GBDT is near-optimal at thresholding a \emph{scalar} feature, so when the relational signal is
+essentially a velocity magnitude (IEEE-CIS's entity aggregates, Retailrocket's item popularity) the
+tree exploits it more efficiently than a neural residual readout on rare, imbalanced data. The FFM
+wins where it contributes something a tree cannot engineer from aggregates --- the \emph{sequential}
+structure of an account's own events, as on TalkingData, where the third attention then adds the
+cross-account signal on top. The takeaway is not ``FFM beats GBDT'' but that the third attention
+\emph{recovers relational signal the two-attention FFM cannot see}, and that whether that clears a
+tree depends on how sequential the task is.
+
+\paragraph{What relational signal the module still misses.} That the FFM trails the tree on two
+datasets points to signal our cross-sequence encoder does not yet capture. It attends over the last
+$K$ recent events at \emph{one} shared entity, so it sees a recency-windowed neighbourhood and its
+velocity, but not: (i) \emph{selection} under camouflage --- when a fraudulent entity's neighbours
+are mostly legitimate, raw attention is diluted and similarity-based neighbour selection is needed;
+(ii) \emph{multi-hop} or multi-entity relations beyond a single hub; and (iii) longer-range
+structure outside the $K$-window. These are natural extensions of the same module.
+
+\paragraph{Productisation: one backbone, task-specific cross-attention.} Because the third attention
+is added at adaptation, a single frozen (or lightly fine-tuned) backbone can serve many tasks, each
+with its \emph{own} cross-attention head keyed on the entity that matters for that task --- merchant
+or IP for fraud, item for recommendation, region for credit. The module is not one-size-fits-all: the
+choice of shared entity, window size, and the relative role of the attention and velocity paths
+should be tuned per downstream task. This flexibility --- a composable relational adapter over a
+shared FFM --- is, we argue, the practical form in which relational signal should enter a deployed
+financial foundation model.
+
+\paragraph{Limitations.} We report a single seed at laptop scale ($\approx$\num{10}M parameters); the
+third attention is trained only at fine-tuning time, not pretrained; and our matched GBDT lacks
+hand-built per-sequence aggregates on some datasets, so the FFM's margin partly reflects sequence
+modelling. Pretraining the third attention with a relational self-supervised objective, and a formal
+decomposition of its attention and velocity paths, are the clearest next steps.

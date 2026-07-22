@@ -1,0 +1,56 @@
+\section{Datasets}
+\label{sec:data}
+
+We evaluate on four datasets (Table~\ref{tab:data}): one controlled synthetic benchmark that acts as
+an isolation control, two public fraud corpora, and one non-fraud e-commerce task. For each we define
+a \emph{sequence entity} (whose events form a sequence the history encoder models) and a \emph{shared
+entity} (the cross-account hub the third attention attends over). Because positives are rare, we
+evaluate on a stratified subsample --- all positive events plus a capped random sample of negatives
+(seed \num{0}) --- and report the resulting base rate; \prauc{} is compared \emph{within} a dataset
+across arms, not across datasets. All splits are causal (as-of-date), with no future leakage.
+
+\begin{table}[t]
+\centering
+\caption{Datasets. Response rate is the positive fraction on the stratified evaluation subsample.}
+\label{tab:data}
+\small
+\begin{tabular}{lllc}
+\toprule
+Dataset & Seq.\ entity & Shared entity & Resp.\ rate \\
+\midrule
+Synthetic (control) & card    & merchant & $0.024$ \\
+TalkingData         & user    & IP       & $0.017$ \\
+IEEE-CIS            & card    & region (addr) & $0.042$ \\
+Retailrocket        & visitor & item     & $0.112$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Synthetic control (no relational signal).} We generate card transactions in which a card
+is compromised at a random time and fires a short \emph{burst} of fraud on \emph{its own} timeline at
+random merchants. The signal is thus entirely \emph{per-account} (a card's own recent behaviour) and
+there is, by construction, \emph{no} cross-account relational signal at the merchant. This is our
+control: a correctly specified relational module should add nothing here. We split by card (unseen
+cards: \num{80}/\num{10}/\num{10}); the evaluation subsample has base rate \num{0.024}.
+
+\paragraph{TalkingData (click fraud).} A large public mobile click log. The label
+\texttt{is\_attributed} marks a click that led to an app install --- the genuine minority among a
+flood of fraudulent clicks. The sequence entity is the user $=(\textrm{IP},\textrm{device},
+\textrm{OS})$; the shared cross-user entity is the \textbf{IP} (a fraud farm drives many users from
+one IP). A per-user model cannot see how active an IP is across \emph{other} users. We use a
+\num{6}M-event time-contiguous subset, split temporally (last \num{20}\% test), base rate \num{0.017}.
+
+\paragraph{IEEE-CIS (card fraud).} A public card-not-present fraud corpus (\num{590}K transactions,
+label \texttt{isFraud}). The sequence entity is the card; the shared entity is the billing region
+(\texttt{addr}), shared across cards. Much of the fraud is a function of the \emph{current}
+transaction's attributes rather than of account history, making it a demanding, largely
+per-transaction setting; split temporally, base rate \num{0.042}.
+
+\paragraph{Retailrocket (e-commerce conversion --- non-fraud).} A public e-commerce clickstream
+(\num{2.76}M events, \num{1.41}M visitors). We predict \emph{conversion}: the positive is an event
+of type add-to-cart or purchase, everything else negative (base rate \num{0.033} overall,
+\num{0.112} on the stratified subsample); the event \emph{type} is held out as the label and never
+an input feature. The sequence entity is the visitor; the shared entity is the \textbf{item}, which
+trends across many visitors concurrently --- a ``going viral now'' signal a per-visitor model cannot
+see. Sequences are short (median length \num{1}, mean \num{2}), so the item-level relational signal
+is the main lever. Split temporally. This is a non-fraud task included to test generalisation.
