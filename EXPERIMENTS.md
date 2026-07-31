@@ -684,3 +684,57 @@ prevent for future runs.
   16k/32k, esp. merchant_name which collides ~24 merchants/bucket), merchant_city semantic/geo
   embedding (real text currently hashed away).
 
+
+---
+
+## R1 — Pretraining-objective + K-window research (2026-07)
+
+Research block prioritising **learning over paper-readiness**: three questions from the
+idea list (#4 ordinal numeric masking, #5 ELECTRA-style plausibility pretraining,
+#10 the K-window). All use the Route-1 paradigm (real pretrain -> finetune from checkpoint),
+single seed.
+
+### Questions
+
+**R1a (#4) — Does ordinal-aware numeric masking help?**
+Numeric fields are *percentile buckets* — an ordered scale — but plain cross-entropy treats
+them as unordered classes: predicting bucket 7 when the truth is 8 costs the same as
+predicting bucket 40. We replace the one-hot target on `num`/`dtlog` fields with an
+exponentially-decaying soft target over neighbouring buckets (`--objective ordinal`,
+width `--ordinal-tau`).
+- *Primary (intrinsic):* `bucket_mae` = mean |argmax bucket − true bucket| on masked numeric
+  cells. Label-independent, so it measures ordinal structure directly.
+- *Secondary (extrinsic):* downstream PR-AUC (probe / fine-tune).
+- *Hypothesis:* ordinal targets lower bucket-MAE substantially; downstream effect is smaller
+  and only visible where the numeric field carries label signal.
+
+**R1b (#5) — Does ELECTRA-style plausibility pretraining beat MLM?**
+Instead of blanking cells with `[MASK]` and reconstructing, corrupt a fraction of cells with
+*plausible* values sampled from each field's empirical marginal and ask a binary head at
+**every** cell "was this replaced?" (`--objective electra`, rate `--p-corrupt`).
+- Two structural advantages: **100% of cells produce gradient** (vs ~31% under our masking
+  mixture) and **no `[MASK]` token ever appears**, removing the pretrain/fine-tune input
+  mismatch. The objective ("is this event plausible?") is also much closer to fraud detection.
+- *Diagnostics:* `acc_corrupt` / `acc_clean` (detection accuracy on corrupted vs clean cells).
+- *Comparison:* pretraining losses are NOT comparable across objectives (different losses) —
+  judge on downstream PR-AUC only.
+- *Hypothesis:* better sample efficiency -> equal or better downstream at equal step count.
+
+**R1c (#10) — How much does the K-window matter?**
+The cross-sequence encoder attends over the last K events at the shared entity. Our standing
+hypothesis is that a bounded K **truncates a velocity magnitude** (a fraud IP at ~700
+clicks/hr cannot be represented by 16 recent neighbours). Sweep K with the backbone fixed.
+- *Key efficiency:* K affects only the neighbour build + the cross-attention module, **not**
+  pretraining -> pretrain once, rebuild neighbours per K, fine-tune per K.
+- *Hypothesis:* PR-AUC rises with K and saturates; if it is flat, the attention path is not
+  using neighbour content and the velocity readout is doing the work.
+
+### Setup
+- R1a/R1b on **IEEE-CIS** (the only real dataset here with an informative numeric field;
+  TalkingData and Retailrocket have no numeric column at all). Baseline `mlm` re-run in the
+  same pod so all three objectives share identical conditions.
+- R1c on **TalkingData** (largest real relational/count signal).
+- `small` preset, 30k pretrain steps, AdamW lr 3e-4, bf16, L40S, seed 0.
+
+### Results
+_pending — see R1 results entry below once runs land._
