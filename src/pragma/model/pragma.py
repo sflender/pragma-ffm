@@ -37,6 +37,9 @@ class MiniPragma(nn.Module):
             self.vel_head = nn.Linear(d, cfg.aux_vel_dim)
         self.mlm_norm = nn.LayerNorm(d)
         self.mlm_heads = nn.ModuleList([nn.Linear(d, f.vocab) for f in tok.fields])
+        if getattr(cfg, "use_rtd", False):
+            # ELECTRA-style discriminator: one binary logit per (event, field) cell
+            self.rtd_head = nn.Linear(d, 1)
         self.apply(self._init)
 
     @staticmethod
@@ -82,6 +85,12 @@ class MiniPragma(nn.Module):
 
     def mlm_logits(self, codes, times, mask, amount=None, mem=None):
         return self.mlm_logits_and_rec(codes, times, mask, amount, mem)[0]
+
+    def rtd_logits(self, codes, times, mask, amount=None, mem=None):
+        """Per-cell 'was this value replaced?' logits (B,L,F) for ELECTRA-style pretraining."""
+        r, field_out = self.encode(codes, times, mask, amount, mem=mem)
+        fused = self.mlm_norm(field_out + r.unsqueeze(2))      # (B,L,F,d) — same fusion as MLM
+        return self.rtd_head(fused).squeeze(-1)                # (B,L,F)
 
     def mlm_logits_and_rec(self, codes, times, mask, amount=None, mem=None):
         """Return (per-field MLM logits, record embeddings) from a single forward pass, so the

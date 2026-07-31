@@ -72,6 +72,7 @@ class ModelConfig:
     # --- aligned-SSL auxiliary head: regress a data-derived relational target (windowed
     # velocity) from the record embedding during pretraining, so the (already-in-input)
     # cross-entity signal is forced into the frozen representation. Off by default. ---
+    use_rtd: bool = False               # ELECTRA-style replaced-token-detection head
     use_aux_vel: bool = False
     aux_vel_dim: int = 2                # #velocity targets (= #--windows cols in merchant_mem)
     aux_vel_idx: int = 5               # first mem column that is a velocity target

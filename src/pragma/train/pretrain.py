@@ -6,6 +6,7 @@ import math
 import time
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -44,6 +45,34 @@ def aux_vel_loss(r, mem, mask, idx, dim, vel_head):
     tgt = mem[:, :, idx:idx + dim]                           # (B,L,dim)
     m = mask[..., None].float()
     return ((pred - tgt) ** 2 * m).sum() / m.sum().clamp(min=1) / max(1, dim)
+
+
+def objective_step(model: MiniPragma, batch: dict, tcfg, objective: str, rtd_cdfs=None,
+                   p_corrupt: float = 0.15, ordinal_tau: float = 1.0):
+    """One forward pass under a research pretraining objective.
+
+    Returns (loss, n_supervised_cells, diagnostics dict). ``mlm`` is the baseline; ``ordinal``
+    swaps numeric-field CE for ordinal soft targets (#4); ``electra`` replaces masking entirely
+    with plausible-corruption + replaced-token detection at every cell (#5).
+    """
+    from pragma.model.objectives import (apply_rtd_corruption, bucket_mae, ordinal_mlm_loss,
+                                         rtd_accuracy, rtd_loss)
+    codes, times, mask = batch["codes"], batch["times"], batch["mask"]
+    if objective == "electra":
+        corrupted, labels, valid = apply_rtd_corruption(codes, mask, p_corrupt, rtd_cdfs)
+        logits = model.rtd_logits(corrupted, times, mask, batch.get("amount"), mem=batch.get("mem"))
+        loss, n = rtd_loss(logits, labels, valid)
+        ac, acl = rtd_accuracy(logits, labels, valid)
+        return loss, n, {"acc_corrupt": float(ac), "acc_clean": float(acl)}
+    masked, targets = apply_mlm_mask(
+        codes, mask, tcfg.mask_token_prob, tcfg.mask_event_prob, tcfg.mask_field_prob)
+    logits = model.mlm_logits(masked, times, mask, batch.get("amount"), mem=batch.get("mem"))
+    if objective == "ordinal":
+        loss, n = ordinal_mlm_loss(logits, targets, model.tok.fields, tau=ordinal_tau)
+    else:
+        loss, n = mlm_loss(logits, targets)
+    mae, nnum = bucket_mae(logits, targets, model.tok.fields)
+    return loss, n, {"bucket_mae": float(mae), "n_num": int(nnum)}
 
 
 def mlm_step(model: MiniPragma, batch: dict, tcfg, aux_lambda: float = 0.0):
@@ -89,6 +118,7 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
           batch_size: int | None = None, lr: float | None = None,
           num_workers: int = 0, dtype: str | None = None, use_mem: bool = False,
           d_mem: int | None = None, aux_vel_lambda: float = 0.0,
+          objective: str = "mlm", p_corrupt: float = 0.15, ordinal_tau: float = 1.0,
           aux_vel_idx: int | None = None, aux_vel_dim: int | None = None) -> Path:
     preset = get_preset(preset_name)
     tcfg = preset.train
@@ -130,8 +160,21 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
     loader = DataLoader(ds, batch_size=tcfg.batch_size, shuffle=True, drop_last=True,
                         num_workers=num_workers, pin_memory=pin,
                         persistent_workers=num_workers > 0)
+    if objective == "electra":
+        preset.model.use_rtd = True
     model = build_model(tok, preset, device)
-    print(f"[pretrain] preset={preset_name} numeric_mode={preset.model.numeric_mode} "
+    # ELECTRA needs each field's empirical value distribution to sample *plausible* replacements
+    rtd_cdfs, diag_run, diag_n = None, {}, 0
+    if objective == "electra":
+        from pragma.model.objectives import field_marginals
+        enc = np.load(Path(data_dir) / "encoded.npz")
+        tr = enc["split"] == 0
+        c = torch.from_numpy(enc["codes"][tr].astype(np.int64)).unsqueeze(0)
+        kp = torch.ones(c.shape[:2], dtype=torch.bool)
+        rtd_cdfs = [x.to(device) for x in field_marginals(c, kp, [f.vocab for f in tok.fields])]
+        print(f"[pretrain] ELECTRA: field marginals from {int(tr.sum()):,} train events, "
+              f"p_corrupt={p_corrupt}")
+    print(f"[pretrain] objective={objective} preset={preset_name} numeric_mode={preset.model.numeric_mode} "
           f"stride={stride or preset.model.max_seq_len} "
           f"params={count_params(model):,} device={device} batch={tcfg.batch_size} "
           f"lr={tcfg.lr:.2e} amp={'bf16' if use_amp else 'fp32'} workers={num_workers} "
@@ -150,7 +193,16 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
         for batch in loader:
             batch = to_device(batch, device, non_blocking=pin)
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_amp):
-                loss, ntok, _ = mlm_step(model, batch, tcfg, aux_lambda=aux_vel_lambda)
+                if objective == "mlm" and aux_vel_lambda > 0.0:
+                    loss, ntok, _ = mlm_step(model, batch, tcfg, aux_lambda=aux_vel_lambda)
+                    diag = {}
+                else:
+                    loss, ntok, diag = objective_step(
+                        model, batch, tcfg, objective, rtd_cdfs=rtd_cdfs,
+                        p_corrupt=p_corrupt, ordinal_tau=ordinal_tau)
+                    for k, v in diag.items():
+                        diag_run[k] = diag_run.get(k, 0.0) + float(v)
+                    diag_n += 1
             opt.zero_grad(set_to_none=True)
             loss.backward()
             gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), tcfg.grad_clip)
@@ -164,9 +216,13 @@ def train(preset_name: str, data_dir: str, tok_path: str, out_dir: str,
             step += 1
             if step % tcfg.log_every == 0:
                 dt = time.time() - t0
+                dstr = ""
+                if diag_n:
+                    dstr = " " + " ".join(f"{k} {v/diag_n:.4f}" for k, v in diag_run.items())
+                    diag_run, diag_n = {}, 0
                 print(f"  step {step:6d}/{tcfg.max_steps} loss {running/tcfg.log_every:.4f} "
                       f"lr {sched.get_last_lr()[0]:.2e} {tcfg.log_every/dt:.1f} it/s "
-                      f"skipped {skipped}")
+                      f"skipped {skipped}{dstr}")
                 running, t0 = 0.0, time.time()
             if step % tcfg.ckpt_every == 0 or step >= tcfg.max_steps:
                 torch.save({"model": model.state_dict(), "preset": preset_name,
@@ -211,6 +267,13 @@ def main() -> None:
                     help="first mem column that is a velocity target (default 5 = after the 5 base feats)")
     ap.add_argument("--aux-vel-dim", type=int, default=None,
                     help="#velocity target columns (= #--windows; default 2)")
+    ap.add_argument("--objective", choices=["mlm", "ordinal", "electra"], default="mlm",
+                    help="pretraining objective: baseline MLM; ordinal-aware numeric MLM (#4); "
+                         "ELECTRA-style replaced-token detection (#5)")
+    ap.add_argument("--p-corrupt", type=float, default=0.15,
+                    help="electra: fraction of real cells replaced by a plausible value")
+    ap.add_argument("--ordinal-tau", type=float, default=1.0,
+                    help="ordinal: soft-target decay width in buckets (->0 recovers plain CE)")
     args = ap.parse_args()
     train(args.preset, args.data_dir, args.tokenizer, args.out_dir, args.device,
           args.max_steps, args.numeric_mode, args.tag, args.max_seq_len,
@@ -218,7 +281,8 @@ def main() -> None:
           batch_size=args.batch_size, lr=args.lr, num_workers=args.num_workers,
           dtype=args.dtype, use_mem=args.mem, d_mem=args.d_mem,
           aux_vel_lambda=args.aux_vel_lambda, aux_vel_idx=args.aux_vel_idx,
-          aux_vel_dim=args.aux_vel_dim)
+          aux_vel_dim=args.aux_vel_dim, objective=args.objective,
+          p_corrupt=args.p_corrupt, ordinal_tau=args.ordinal_tau)
 
 
 if __name__ == "__main__":
