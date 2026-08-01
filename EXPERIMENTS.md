@@ -774,3 +774,65 @@ change the paper's claim.
 fine-tunes were packed into one pod (ELECTRA never ran). Fixes: one objective per pod; publish
 results as short *text* messages (ntfy attachments expire in ~3h, messages in ~12h); re-publish a
 cumulative summary after every arm so a single late poll recovers everything.
+
+### R1a/R1b results — pretraining objectives on IEEE-CIS
+
+**Dataset:** IEEE-CIS card-not-present fraud (~590k transactions; sequence entity = card,
+shared entity = addr1; base rate **0.042** on the stratified eval subsample).
+**Setup:** identical across arms — `small` preset, 30k pretrain steps, AdamW lr 3e-4, bf16,
+L40S, **single seed**. Only the *pretraining objective* differs; fine-tuning is identical
+(6 epochs, batch 128, lr 3e-4, linear head).
+**Control:** `r1_mlm_probe` reproduced the Route-1 IEEE baseline **exactly** (0.1629), confirming
+the refactored objective code path did not change baseline behaviour.
+
+| adaptation | MLM (baseline) | ordinal (#4) | ELECTRA/RTD (#5) |
+|---|---|---|---|
+| frozen linear probe | 0.1629 | **0.1708** | **0.1113** |
+| fine-tune | 0.1674 | _pending_ | **0.2221** |
+| fine-tune + cross-attn | 0.2295 | _pending_ | _not run (dropped)_ |
+| _matched LightGBM_ | _0.2941_ | | |
+
+Pretraining diagnostics: MLM `bucket_mae` 5.66 · ordinal `bucket_mae` **5.88** ·
+ELECTRA `acc_corrupt` 0.933 / `acc_clean` 0.906 (high but **not saturated**, so the
+marginal-sampler corruption task was non-trivial — my main worry did not materialise).
+
+#### R1b (ELECTRA) — the headline: RTD is a better *initialisation*, not a better *frozen encoder*
+- **Fine-tune: 0.2221 vs 0.1674 = +0.055 PR-AUC (+33% relative).** Substantial.
+- **Frozen probe: 0.1113 vs 0.1629 = −0.052.** Substantially worse.
+- This is exactly the predicted split. RTD only needs a *decision boundary* good enough to spot
+  corruptions; it never has to model each field's full conditional distribution, so the frozen
+  representation is "lazier" for linear readout — but it is a far better starting point when the
+  backbone is allowed to reshape itself for a discriminative task. It mirrors the known NLP
+  pattern where ELECTRA-family encoders excel at classification fine-tuning yet need extra
+  adaptation for direct/frozen feature use.
+- **Striking comparison:** ELECTRA + plain fine-tune (**0.2221**) ≈ MLM + fine-tune + the whole
+  cross-attention module (**0.2295**). Changing the *pretraining objective* bought almost as much
+  as adding the entire third-attention architecture — and it is far simpler. Combined with R1c
+  (flat in K), the evidence increasingly favours **the objective as the better lever than the
+  architecture.**
+- Still below the matched GBDT (0.2941), consistent with IEEE fraud being largely per-transaction.
+
+#### R1a (ordinal) — hypothesis not supported
+- **`bucket_mae` got slightly *worse*** (5.88 vs 5.66). We predicted a substantial improvement.
+  Plausible mechanism: soft targets deliberately place mass on neighbouring buckets, which can
+  blunt the *argmax* even if the full predictive distribution is better calibrated — and
+  `bucket_mae` scores argmax only. A calibration metric (e.g. expected bucket distance under the
+  full distribution, or NLL) would be the fairer intrinsic test.
+- Frozen probe **0.1708 vs 0.1629 (+0.008)** — a small improvement, well within plausible
+  single-seed noise; not something to lean on.
+- Verdict pending the fine-tune arm, but as it stands this is **null-to-negative**.
+
+#### Caveats
+- **Single seed, single dataset.** The ELECTRA fine-tune gain is large enough to be interesting
+  but must be replicated (≥3 seeds, ≥2 datasets) before it is a claim.
+- Our ELECTRA is **simplified**: corruptions come from each field's *fixed empirical marginal*,
+  not a learned generator, so replacements ignore context. True ELECTRA should be *harder* and
+  potentially better — the obvious follow-up.
+- Pretraining losses are **not comparable across objectives** (different loss functions); only
+  downstream numbers are.
+
+#### Next
+1. Replicate ELECTRA on a second dataset (TalkingData) and with ≥3 seeds.
+2. True ELECTRA with a small learned MLM generator instead of the marginal sampler.
+3. R2 path-ablation (attention-only vs count-only vs both) to settle whether the cross-attention
+   path earns its keep at all.
