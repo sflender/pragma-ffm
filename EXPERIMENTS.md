@@ -738,3 +738,39 @@ clicks/hr cannot be represented by 16 recent neighbours). Sweep K with the backb
 
 ### Results
 _pending — see R1 results entry below once runs land._
+
+### R1c results — K-window sweep (TalkingData, backbone fixed, seed 0)
+
+| arm | PR-AUC |
+|---|---|
+| fine-tune, no cross-attention | 0.678 |
+| + cross-attn, K=2  | **0.743** |
+| + cross-attn, K=4  | 0.725 |
+| + cross-attn, K=8  | 0.735 |
+| + cross-attn, K=16 | 0.714 |
+| K=32, K=64 | not recovered (pod terminated; ntfy messages aged out) |
+
+**Hypothesis was WRONG.** We predicted PR-AUC would rise with K and saturate (the standing
+"a bounded window truncates a velocity magnitude" story). Instead it is **flat-to-decreasing**:
+K=2 is the best point and K=16 the worst of the four. The spread (0.714–0.743) is comparable to
+the seed noise we measured earlier, so the ordering *within* K should not be over-read — but the
+absence of any upward trend across four values is itself the finding.
+
+**What survives:** every K beats no-cross-attention (0.678 → 0.71–0.74), so the module helps.
+
+**What this casts doubt on:** that the *attention over neighbour content* is what helps. K only
+affects the attention path; the velocity/count readout is K-independent. Flatness in K is exactly
+what you would see if **the count path is doing the work and the attention path contributes
+little** — more neighbours then only add noise. Supporting (older, from-scratch) evidence on the
+same dataset: attention-only `xseq` scored 0.619 vs 0.616 for the per-account FFM (i.e. ~nothing),
+while count-only `mem` scored 0.672.
+
+**Decisive follow-up (R2):** on one fixed Route-1 backbone, run *attention-only* vs *count-only*
+vs *both*. If attention-only ≈ no-cross-attention, the honest framing is "a cross-entity velocity
+feature, plus an attention path that is not currently earning its keep" — which would materially
+change the paper's claim.
+
+**Operational lesson:** R1ab hit its 8h watchdog because three sequential 30k pretrains + nine
+fine-tunes were packed into one pod (ELECTRA never ran). Fixes: one objective per pod; publish
+results as short *text* messages (ntfy attachments expire in ~3h, messages in ~12h); re-publish a
+cumulative summary after every arm so a single late poll recovers everything.
