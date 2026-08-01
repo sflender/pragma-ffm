@@ -836,3 +836,56 @@ marginal-sampler corruption task was non-trivial — my main worry did not mater
 2. True ELECTRA with a small learned MLM generator instead of the marginal sampler.
 3. R2 path-ablation (attention-only vs count-only vs both) to settle whether the cross-attention
    path earns its keep at all.
+
+### R1b replication on Retailrocket — the ELECTRA claim does NOT cleanly generalise
+
+**Correction first.** In the previous entry I called R1a (ordinal) "null-to-negative" before its
+fine-tune arm landed. That was premature and **wrong**: ordinal fine-tune is **0.2026 vs MLM
+0.1674 = +0.035 (+21% rel)**. `bucket_mae` — the intrinsic metric I designed as the primary
+measure for #4 — got *worse* (5.88 vs 5.66) while downstream got *better*. It was a misleading
+proxy, which is itself an instance of the proxy-alignment problem this project studies. Downstream
+is the only judge.
+
+#### Complete IEEE-CIS objective table (single seed)
+| adaptation | MLM | ordinal | ELECTRA |
+|---|---|---|---|
+| frozen probe | 0.1629 | 0.1708 | 0.1113 |
+| fine-tune | 0.1674 | **0.2026** | **0.2221** |
+| fine-tune + cross-attn | 0.2295 | 0.2304 | _(not run)_ |
+
+#### ELECTRA vs MLM across two datasets
+| arm | IEEE-CIS (fraud) | Δ | Retailrocket (non-fraud) | Δ |
+|---|---|---|---|---|
+| frozen probe | 0.1113 vs 0.1629 | **−0.052** | 0.3943 vs 0.3440 | **+0.050** |
+| fine-tune | 0.2221 vs 0.1674 | **+0.055** | 0.4775 vs 0.4670 | **+0.011** |
+
+RTD detection difficulty differed sharply: IEEE `acc_corrupt` 0.933 / `acc_clean` 0.906 vs
+Retailrocket 0.706 / 0.663. Retailrocket has only 3 event fields (a 10k-bucket item + hour + dow),
+so a marginal-sampled replacement item is often genuinely plausible and hard to detect; IEEE's
+richer, more correlated fields make corruption far easier to spot.
+
+#### Honest verdict
+1. **Direction replicates, magnitude does not.** ELECTRA fine-tune ≥ MLM fine-tune on both
+   datasets, but +0.055 (IEEE) vs **+0.011** (Retailrocket). At a single seed the Retailrocket
+   gain is small enough to be noise. **The claim "RTD fine-tunes better" is supported on IEEE and
+   only weakly on Retailrocket — it is not established as a general effect.**
+2. **My "better initialisation, worse frozen encoder" story is refuted as a general claim.** The
+   probe sign *flips* between datasets (−0.052 vs +0.050). That interpretation was
+   over-generalised from a single dataset; on Retailrocket ELECTRA's frozen probe is clearly the
+   better one.
+3. **Both alternative objectives beat MLM at fine-tuning on IEEE** (ordinal +21% rel, ELECTRA
+   +33% rel). The broader hypothesis worth pursuing is "MLM is a suboptimal pretraining objective
+   here", not "ELECTRA specifically wins".
+4. **Possible ceiling effect.** `mlm+xattn` 0.2295 ≈ `ordinal+xattn` 0.2304, and `electra+ft`
+   alone reaches 0.2221 — better pretraining and cross-attention may be **substitutes recovering
+   the same signal** rather than complements. The `electra+xattn` arm that would have settled this
+   was cancelled to save budget; recovering it is the cheapest high-value next run.
+
+#### Binding limitation
+**Everything here is n=1 seed.** Given the seed instability measured earlier in this project
+(cross-attention swung 0.41/0.13/0.22 across seeds), effects of ~0.01–0.05 cannot be separated
+from noise. No further objective claims should be made without ≥3 seeds.
+
+#### Cost note
+R1 consumed ~$21 of GPU. The single largest waste was packing three sequential pretrains into one
+8h pod (R1ab watchdog kill, ELECTRA never ran on that pod). One pretrain per pod is the rule now.

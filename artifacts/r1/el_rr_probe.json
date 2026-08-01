@@ -1,0 +1,7 @@
+{
+ "arm": "el_rr_probe",
+ "dataset": "retailrocket",
+ "seed": 0,
+ "pr_auc": 0.3943,
+ "source": "ntfy summary (pod terminated)"
+}
