@@ -1,0 +1,7 @@
+{
+ "arm": "r1_ordinal_ca",
+ "dataset": "ieee_cis",
+ "seed": 0,
+ "pr_auc": 0.2304,
+ "source": "ntfy summary (pod terminated)"
+}

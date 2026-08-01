@@ -1,0 +1,7 @@
+{
+ "arm": "r1_electra_probe",
+ "dataset": "ieee_cis",
+ "seed": 0,
+ "pr_auc": 0.1113,
+ "source": "ntfy summary (pod terminated)"
+}
