@@ -120,9 +120,19 @@ def main():
     # ---- optional: compiled compute ----------------------------------------
     if a.compile:
         try:
-            cm = torch.compile(build_model(tok, preset, dev))
-            ips_bc = compute_phase(cm, "compiled")
-            print(f"  -> compile speedup on compute: {ips_bc/ips_b:.2f}x")
+            import torch._dynamo as dynamo
+            dynamo.reset(); dynamo.utils.counters.clear()
+            cm = build_model(tok, preset, dev)
+            # NOTE: MiniPragma defines no forward(); torch.compile(model) would wrap forward()
+            # and be bypassed entirely by our custom methods (measured 1.00x = never compiled).
+            # Compile the hot SUBMODULES instead -- they are ordinary nn.Modules with forward().
+            cm.event = torch.compile(cm.event)
+            cm.history = torch.compile(cm.history)
+            ips_bc = compute_phase(cm, "compiled-submodules")
+            ngraphs = sum(v for k, v in dynamo.utils.counters.get("stats", {}).items()
+                          if "graph" in k) or dynamo.utils.counters.get("stats", {})
+            print(f"  -> compile speedup on compute: {ips_bc/ips_b:.2f}x  "
+                  f"(dynamo stats: {dict(dynamo.utils.counters.get('stats', {}))})")
         except Exception as e:
             print(f"  compile FAILED: {type(e).__name__}: {str(e)[:160]}")
 
