@@ -889,3 +889,37 @@ from noise. No further objective claims should be made without ≥3 seeds.
 #### Cost note
 R1 consumed ~$21 of GPU. The single largest waste was packing three sequential pretrains into one
 8h pod (R1ab watchdog kill, ELECTRA never ran on that pod). One pretrain per pod is the rule now.
+
+### R1d — Profiling the pretraining loop (L40S, `small`, batch 128)
+
+| phase | workers=0 | workers=4 |
+|---|---|---|
+| A data-only (loader ceiling) | 59.6 it/s | 100–176 it/s |
+| B compute-only (GPU ceiling) | 6.05 it/s | 6.05 it/s |
+| C end-to-end (actual) | **6.02 it/s** | **6.04 it/s** |
+
+**Verdict: firmly COMPUTE-bound.** End-to-end sits within 0.5% of the compute ceiling; the loader
+can supply 10–30x more batches than we consume. Consequences:
+- **`num_workers` is irrelevant for *pretraining*** (0 -> 4 changed throughput by 0.00 it/s).
+  It genuinely helped *fine-tuning*, which uses a different dataset class (`AsOfDateDataset`, with
+  the npz-decompression issue) — that earlier fix should not be generalised to the pretrain loop.
+- At 6 it/s, 30k steps ≈ 83 min, matching observed pretrain wall-clock.
+- 165 ms/step for a ~10M-param model on an L40S is slow, which points at *shape*, not FLOPs: the
+  event encoder attends over **B×L = 16,384 sequences of only F+1 = 6 tokens**. Thousands of tiny
+  attention ops => kernel-launch/bandwidth bound. That is the regime where fusion should help.
+
+**torch.compile: still unmeasured on GPU.** Two failed attempts, both my error:
+1. `torch.compile(model)` wraps `forward()`, but `MiniPragma` defines **no** `forward()` — our code
+   calls `model.mlm_logits(...)` directly, so the wrapper was bypassed. Measured "1.00x" meant
+   *never compiled*, not *no speedup*. Verified: `cm.mlm_logits is m.mlm_logits` -> True.
+   Fix: compile the hot submodules (`model.event`, `model.history`) which are real `nn.Module`s.
+   Local CPU check after the fix: `unique_graphs=2`, **1.55x**.
+2. On GPU, inductor then failed with `Failed to find C compiler` — the pod image is
+   `pytorch/...-runtime`, which has no build tools. Fix: `apt-get install -y gcc g++` in the pod
+   bootstrap (or use the `-devel` image).
+
+**Lesson (recurring):** the pod script grepped profiler output for expected patterns before
+publishing, so the first crash's traceback was filtered away entirely and came back as an empty
+message. Always publish the raw tail + exit code from an ephemeral machine.
+
+**Cost:** ~$0.75 across three profiling pods, of which two were lost to the above mistakes.
